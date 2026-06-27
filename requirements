@@ -1,23 +1,5 @@
-# CUMTA Traffic Intelligence — Python Dependencies
-# Install with:  pip install -r requirements.txt
-
-# ── Streamlit framework ───────────────────────────────────────
-streamlit>=1.33.0
-
-# ── Data manipulation ─────────────────────────────────────────
-pandas>=2.0.0
-numpy>=1.26.0
-
-# ── Interactive charting (replaces matplotlib in the UI) ──────
-plotly>=5.20.0
-
-# ── Statistical analysis ──────────────────────────────────────
-scipy>=1.12.0
-
-# ── PostgreSQL database driver + ORM ─────────────────────────
-# Only needed if you use the PostgreSQL data source option
-sqlalchemy>=2.0.0
-psycopg2-binary>=2.9.9
-
-# ── Optional: read Excel exports from the DB ──────────────────
-openpyxl>=3.1.2
+plotly==5.24.1
+scipy==1.13.1
+sqlalchemy==2.0.36
+psycopg2-binary==2.9.9
+openpyxl==3.1.5
