@@ -4,6 +4,14 @@
 # Run with:  streamlit run app.py
 # ============================================================
 
+import sys
+import os
+
+# Guarantee that the folder containing app.py is on the Python path.
+# Streamlit Cloud sometimes runs from a different working directory,
+# which causes "No module named 'utils'" even when the folder exists.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 import streamlit as st
 import pandas as pd
 import numpy as np
