@@ -54,9 +54,13 @@ def main():
         # Global standardization formatting enforcements across all telemetry slices
         df_fetched['shapefile_segment_name'] = df_fetched['shapefile_segment_name'].astype(str).str.upper()
         
-        # Normalize timestamp column fields to extract the derived hour parameter reliably
+        # FIXED PARSING LAYER: Enforced dayfirst parsing with mixed format fallback strategies
         if 'execution_timestamp' in df_fetched.columns:
-            df_fetched['execution_timestamp'] = pd.to_datetime(df_fetched['execution_timestamp'])
+            df_fetched['execution_timestamp'] = pd.to_datetime(
+                df_fetched['execution_timestamp'], 
+                format='mixed', 
+                dayfirst=True
+            )
             df_fetched['derived_hour'] = df_fetched['execution_timestamp'].dt.hour
         elif 'hour_of_day' in df_fetched.columns:
             df_fetched['derived_hour'] = df_fetched['hour_of_day'].astype(int)
@@ -128,7 +132,6 @@ def main():
         st.header("Hypothesis 1: The 'Speed Paradox' of Congestion Slices")
         st.write("Tests the engineering thesis that space-mean speeds fail to linearly align with Travel Time Index (TTI) changes during transitional congestion slices.")
         
-        # Guard clause to ensure vehicle speed parameters are available
         if 'average_speed_kmph' not in df_fetched.columns:
             st.warning("Warning: Speed metrics absent from database columns. Synthesizing realistic fluid-flow speed vectors...")
             df_fetched['average_speed_kmph'] = 45.0 / df_fetched['travel_time_index_tti'] + np.random.normal(0, 1.5, size=len(df_fetched))
@@ -143,7 +146,6 @@ def main():
             hue='corridor_name', alpha=0.7, ax=ax, edgecolor='none'
         )
         
-        # Fit a non-linear inverse polynomial curve to track the speed-congestion paradox breakdown
         clean_df = df_fetched.dropna(subset=['travel_time_index_tti', 'average_speed_kmph'])
         fit_coeffs = np.polyfit(1.0 / clean_df['travel_time_index_tti'], clean_df['average_speed_kmph'], 1)
         x_space = np.linspace(clean_df['travel_time_index_tti'].min(), clean_df['travel_time_index_tti'].max(), 200)
@@ -156,7 +158,6 @@ def main():
         ax.legend(loc='upper right')
         st.pyplot(fig)
 
-        # Micro-segment correlation audit table
         st.write("### Micro-Segment Non-Linear Correlation Matrix")
         corr_matrix = df_fetched.groupby('shapefile_segment_name')[['travel_time_index_tti', 'average_speed_kmph']].corr().iloc[0::2,-1].reset_index()
         corr_matrix = corr_matrix.rename(columns={'average_speed_kmph': 'Pearson R Speed-TTI Correlation'}).drop(columns=['level_1'])
