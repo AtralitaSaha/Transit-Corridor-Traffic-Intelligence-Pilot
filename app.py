@@ -34,6 +34,13 @@ st.markdown("""
     .business-q {
         color: #b91c1c;
         font-weight: bold;
+        margin-top: 0.5rem;
+        margin-bottom: 0.5rem;
+    }
+    .action-strat {
+        color: #0f766e;
+        font-weight: bold;
+        margin-top: 0.5rem;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -56,7 +63,7 @@ def main():
     
     # Guard clause: Stop processing if a data asset is not supplied to the cloud engine
     if uploaded_file is None:
-        st.info("Application Awaiting Dataset Ingestion. Please upload 'synthetic_telemetry_21_days.csv' via the sidebar menu panel to run the analytics.")
+        st.info("ℹ️ Application Awaiting Dataset Ingestion. Please upload 'synthetic_telemetry_21_days.csv' via the sidebar menu panel to run the analytics.")
         return
 
     # Ingest the file into memory via standard pandas
@@ -97,10 +104,10 @@ def main():
         label="Select Diagnostic Framework",
         options=[
             "Dataset Overview & Audit Table",
-            "Hypothesis 1: Speed Paradox & Slices",
-            "Hypothesis 2: Peak Profiles & Failure Rates",
-            "Hypothesis 4: Weather Sensitivity Slopes",
-            "Hypothesis 7: 3D Topographical Gradients",
+            "Hypothesis 1: Systemic Bottleneck Localization",
+            "Hypothesis 2: Temporal Peak Profiling",
+            "Hypothesis 4: Weather-Driven Variance",
+            "Hypothesis 7: The Flyover Exit & Gradients",
             "Hypothesis 8: Spatial Length Dilution Bias"
         ],
         index=0
@@ -140,14 +147,14 @@ def main():
     # =============================================================================
     # MODULE TAB 1: HYPOTHESIS 1 - SYSTEMIC BOTTLENECK LOCALIZATION
     # =============================================================================
-    elif selected_tab == "Hypothesis 1: Speed Paradox & Slices":
+    elif selected_tab == "Hypothesis 1: Systemic Bottleneck Localization":
         st.header("Hypothesis 1: Systemic Bottleneck Localization (True vs. Spillover Traffic)")
         
         st.markdown("""
         <div class="framework-box">
-            <b>Core Hypothesis Framework:</b> Space-mean speeds fail to linearly align with Travel Time Index (TTI) changes during transitional congestion slices.<br>
-            <span class="business-q">The Business Question:</span> Which specific micro-segments act as "root cause" bottlenecks that create cascading spillover queues across the corridor, and where should engineers focus their attention first?<br>
-            <b>The Action Strategy:</b> By calculating the Travel Time Index (TTI) at a sub-1-kilometer resolution, we mathematically separate high-TTI "root cause" nodes from "victim" segments that simply absorb the spillover traffic.
+            <b>Core Hypothesis Framework:</b> Systemic Bottleneck Localization (True vs. Spillover Traffic)<br>
+            <div class="business-q">The Business Question:</div> Which specific micro-segments act as "root cause" bottlenecks that create cascading spillover queues across the corridor, and where should engineers focus their attention first?<br>
+            <div class="action-strat">The Action:</div> By calculating the Travel Time Index (TTI) at a sub-1-kilometer resolution, we will mathematically separate high-TTI "root cause" nodes from "victim" segments that simply absorb the spillover traffic.
         </div>
         """, unsafe_allow_html=True)
         
@@ -185,14 +192,14 @@ def main():
     # =============================================================================
     # MODULE TAB 2: HYPOTHESIS 2 - TEMPORAL PEAK PROFILING
     # =============================================================================
-    elif selected_tab == "Hypothesis 2: Peak Profiles & Failure Rates":
+    elif selected_tab == "Hypothesis 2: Temporal Peak Profiling":
         st.header("Hypothesis 2: Temporal Peak Profiling & Network Failure Rates")
         
         st.markdown("""
         <div class="framework-box">
-            <b>Core Hypothesis Framework:</b> Fixed clock boundaries compress true congestion profiles because peak rush envelopes exhibit severe calendar variations.<br>
-            <span class="business-q">The Business Question:</span> At what precise minute does a road’s capacity fail, how long does it take for the traffic to clear out, and how does this cycle shift on weekends?<br>
-            <b>The Action Strategy:</b> We will track TTI at 15-minute intervals to plot the exact exponential degradation and recovery curves of the transit network.
+            <b>Core Hypothesis Framework:</b> Temporal Peak Profiling & Network Failure Rates<br>
+            <div class="business-q">The Business Question:</div> At what precise minute does a road’s capacity fail, how long does it take for the traffic to clear out, and how does this cycle shift on weekends?<br>
+            <div class="action-strat">The Action:</div> We will track TTI at 15-minute intervals to plot the exact exponential degradation and recovery curves of the transit network.
         </div>
         """, unsafe_allow_html=True)
         
@@ -242,16 +249,16 @@ def main():
         st.dataframe(report_df, use_container_width=True)
 
     # =============================================================================
-    # MODULE TAB 3: HYPOTHESIS 4 - WEATHER-DRIVEN ENV VARIANCE
+    # MODULE TAB 3: HYPOTHESIS 4 - WEATHER SENSITIVITY SLOPES
     # =============================================================================
-    elif selected_tab == "Hypothesis 4: Weather Sensitivity Slopes":
+    elif selected_tab == "Hypothesis 4: Weather-Driven Variance":
         st.header("Hypothesis 4: Measuring Weather-Driven Environmental Variance")
         
         st.markdown("""
         <div class="framework-box">
-            <b>Core Hypothesis Framework:</b> Active precipitation degrades regional network capacity uniformly across macro-link classes.<br>
-            <span class="business-q">The Business Question:</span> Exactly how much does rain degrade our transit network capacity compared to a normal dry day, and can we mathematically isolate these events?<br>
-            <b>The Action Strategy:</b> By mapping localized rainfall intensity and visibility limits directly over our descriptive traffic speed data, we will test the hypothesis that certain severe traffic spikes are purely weather anomalies.
+            <b>Core Hypothesis Framework:</b> Measuring Weather-Driven Environmental Variance<br>
+            <div class="business-q">The Business Question:</div> Exactly how much does rain degrade our transit network capacity compared to a normal dry day, and can we mathematically isolate these events?<br>
+            <div class="action-strat">The Action:</div> By mapping localized rainfall intensity and visibility limits directly over our descriptive traffic speed data, we will test the hypothesis that certain severe traffic spikes are purely weather anomalies.
         </div>
         """, unsafe_allow_html=True)
         
@@ -283,16 +290,16 @@ def main():
         st.pyplot(fig)
 
     # =============================================================================
-    # MODULE TAB 4: HYPOTHESIS 7 - LAYERED NETWORKS & SLOPES
+    # MODULE TAB 4: HYPOTHESIS 7 - FLYOVER EXIT & UPHILL GRADIENTS
     # =============================================================================
-    elif selected_tab == "Hypothesis 7: 3D Topographical Gradients":
-        st.header("Hypothesis 7: The 'Flyover Exit' & Uphill Gradient Penalties (Layered Networks)")
+    elif selected_tab == "Hypothesis 7: The Flyover Exit & Gradients":
+        st.header("Hypothesis 7: The 'Flyover Exit' & Uphill Gradient Penalties")
         
         st.markdown("""
         <div class="framework-box">
-            <b>Core Hypothesis Framework:</b> Structural bottlenecks relocate along vertical geometric vectors when grade separations lack down-ramp terminal management.<br>
-            <span class="business-q">The Business Question:</span> Do steep inclines permanently slow down heavy fleets, and do express flyovers actually eliminate congestion or simply move the traffic jam to the at-grade off-ramp?<br>
-            <b>The Action Strategy:</b> We will filter segments by their 3D topographical gradient and network_layer_type to map specific baseline speed drops on inclines and structural queuing at flyover merges.
+            <b>Core Hypothesis Framework:</b> The "Flyover Exit" & Uphill Gradient Penalties (Layered Networks)<br>
+            <div class="business-q">The Business Question:</div> Do steep inclines permanently slow down heavy fleets, and do express flyovers actually eliminate congestion or simply move the traffic jam to the at-grade off-ramp?<br>
+            <div class="action-strat">The Action:</div> We will filter segments by their 3D topographical gradient and network_layer_type to map specific baseline speed drops on inclines and structural queuing at flyover merges.
         </div>
         """, unsafe_allow_html=True)
         
@@ -329,16 +336,16 @@ def main():
         st.pyplot(fig)
 
     # =============================================================================
-    # MODULE TAB 5: HYPOTHESIS 8 - LENGTH DILUTION BIAS
+    # MODULE TAB 5: HYPOTHESIS 8 - SPATIAL LENGTH DILUTION BIAS
     # =============================================================================
     elif selected_tab == "Hypothesis 8: Spatial Length Dilution Bias":
         st.header("Hypothesis 8: Spatial Slicing Accuracy & 'Length Dilution'")
         
         st.markdown("""
         <div class="framework-box">
-            <b>Core Hypothesis Framework:</b> Aggregated routing traces operate like a low-pass data signal filter, dampening true localized system friction.<br>
-            <span class="business-q">The Business Question:</span> Does analyzing a long stretch of road artificially hide severe, localized traffic jams by averaging the slow speeds with fast speeds?<br>
-            <b>The Action Strategy:</b> We will correlate the true driving distance of each segment with its maximum peak-hour TTI spike to prove that standard end-to-end routing APIs historically underreport micro-congestion.
+            <b>Core Hypothesis Framework:</b> Spatial Slicing Accuracy & "Length Dilution"<br>
+            <div class="business-q">The Business Question:</div> Does analyzing a long stretch of road artificially hide severe, localized traffic jams by averaging the slow speeds with fast speeds?<br>
+            <div class="action-strat">The Action:</div> We will correlate the true driving distance of each segment with its maximum peak-hour TTI spike to prove that standard end-to-end routing APIs historically underreport micro-congestion.
         </div>
         """, unsafe_allow_html=True)
         
