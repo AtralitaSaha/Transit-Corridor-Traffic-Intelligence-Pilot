@@ -130,22 +130,22 @@ def main():
     elif selected_tab == "Hypothesis 1: Systemic Bottleneck Localization":
         st.header("Hypothesis 1: Systemic Bottleneck Localization (True vs. Spillover Traffic)")
         
-        # Safe universal rendering structure using standard Markdown headers and native block components
-        st.subheader("1. Systemic Bottleneck Localization (True vs. Spillover Traffic) - (Atralita)")
-        st.error("**The Business Question:**\nWhich specific micro-segments act as 'root cause' bottlenecks that create cascading spillover queues across the corridor, and where should engineers focus their attention first?")
-        st.success("**The Action:**\nBy calculating the Travel Time Index (TTI) at a sub-1-kilometer resolution, we will mathematically separate high-TTI 'root cause' nodes from 'victim' segments that simply absorb the spillover traffic.")
-        st.info("**Expected Outputs:**\nCorridor congestion rankings, segment-level hotspot maps, and a list of the top priority bottlenecks.")
+        # Robust built-in block components replacing the unstable HTML tags completely
+        st.subheader("Executive Framework: Hypothesis 1 Specifications")
+        st.error("**The Business Question:** Which specific micro-segments act as 'root cause' bottlenecks that create cascading spillover queues across the corridor, and where should engineers focus their attention first?")
+        st.success("**The Action:** By calculating the Travel Time Index (TTI) at a sub-1-kilometer resolution, we will mathematically separate high-TTI 'root cause' nodes from 'victim' segments that simply absorb the spillover traffic.")
+        st.info("**Expected Outputs:** Corridor congestion rankings, segment-level hotspot maps, and a list of the top priority bottlenecks.")
         st.write("---")
         
-        # Advanced Methodology injection from shared notebook
-        st.markdown("### 🔬 JUPYTER NOTEBOOK METHODOLOGY BRIEF")
+        # Notebook methodology injection logic integration
+        st.markdown("### 🔬 Notebook Analytical Engine Infrastructure Summary")
         st.markdown("""
-        * **Variable Mapping:** Maps *shapefile_segment_name* at a sub-1km bounds framework against calculated live *travel_time_index_tti* variables.
-        * **Space-Mean Approximations:** Infers speed proxies ($V = \frac{D_t}{T_c}$) by dividing true driving distance vectors by total tracking durations.
-        * **Data Slice Requirement:** Minimum of 7 to 14 days of continuous baseline tracking to establish reliable, recurring bottleneck patterns versus isolated incidents.
+        * **Variable Mapping Logic:** Correlates unique *shapefile_segment_name* keys at a granular sub-1km boundary mapping scale directly against live *travel_time_index_tti* values.
+        * **Space-Mean Flow Metrics:** Evaluates vehicle delay intensities by separating true structural failures from momentary upstream queue spillbacks.
         """)
         st.write("---")
         
+        # FAIL-SAFE FALLBACK ENGINE: Forces runtime arrays construction if durations are NaN/missing
         if ('current_travel_time_seconds' not in df_fetched.columns or 
             'free_flow_travel_time_seconds' not in df_fetched.columns or 
             df_fetched['current_travel_time_seconds'].isnull().all()):
@@ -201,17 +201,16 @@ def main():
     elif selected_tab == "Hypothesis 2: Temporal Peak Profiling":
         st.header("Hypothesis 2: Temporal Peak Profiling & Network Failure Rates")
         
-        st.subheader("2. Temporal Peak Profiling & Network Failure Rates - (Atralita)")
-        st.error("**The Business Question:**\nAt what precise minute does a road’s capacity fail, how long does it take for the traffic to clear out, and how does this cycle shift on weekends?")
-        st.success("**The Action:**\nWe will track TTI at 15-minute intervals to plot the exact exponential degradation and recovery curves of the transit network.")
-        st.info("**Expected Outputs:**\nHourly congestion profiles, peak-hour identification tables, and weekday vs. weekend comparison dashboards.")
+        st.subheader("Executive Framework: Hypothesis 2 Specifications")
+        st.error("**The Business Question:** At what precise minute does a road’s capacity fail, how long does it take for the traffic to clear out, and how does this cycle shift on weekends?")
+        st.success("**The Action:** We will track TTI at 15-minute intervals to plot the exact exponential degradation and recovery curves of the transit network.")
+        st.info("**Expected Outputs:** Hourly congestion profiles, peak-hour identification tables, and weekday vs. weekend comparison dashboards.")
         st.write("---")
         
-        st.markdown("### 🔬 JUPYTER NOTEBOOK METHODOLOGY BRIEF")
+        st.markdown("### 🔬 Notebook Analytical Engine Infrastructure Summary")
         st.markdown("""
-        * **Variable Mapping:** Pairs *hour_of_day* (temporal marker [0-23] async poll) and binary *is_weekend* markers directly with live *travel_time_index_tti* arrays.
-        * **Statistical Metrics:** Calculates 15-minute segment clock loops to catch the exact moment velocity decay crosses the 90th percentile barrier.
-        * **Data Slice Requirement:** Minimum of 7 days (must include at least one full Saturday and Sunday) to capture the weekday vs. weekend temporal shifts.
+        * **Variable Mapping Logic:** Integrates time parameters (*hour_of_day* or *derived_hour*) alongside *is_weekend* flags to map the network's degradation rate.
+        * **Statistical Profile:** Evaluates cyclical recurring capacity collapse parameters across 15-minute temporal window bins.
         """)
         st.write("---")
         
@@ -266,17 +265,16 @@ def main():
     elif selected_tab == "Hypothesis 4: Weather-Driven Variance":
         st.header("Hypothesis 4: Measuring Weather-Driven Environmental Variance")
         
-        st.subheader("4. Measuring Weather-Driven Environmental Variance - (Atralita)")
-        st.error("**The Business Question:**\nExactly how much does rain degrade our transit network capacity compared to a normal dry day, and can we mathematically isolate these events?")
-        st.success("**The Action:**\nBy mapping localized rainfall intensity and visibility limits directly over our descriptive traffic speed data, we will test the hypothesis that certain severe traffic spikes are purely weather anomalies.")
-        st.info("**Expected Outputs:**\nRain-sensitivity slope calculations and weather-delay isolation metrics.")
+        st.subheader("Executive Framework: Hypothesis 4 Specifications")
+        st.error("**The Business Question:** Exactly how much does rain degrade our transit network capacity compared to a normal dry day, and can we mathematically isolate these events?")
+        st.success("**The Action:** By mapping localized rainfall intensity and visibility limits directly over our descriptive traffic speed data, we will test the hypothesis that certain severe traffic spikes are purely weather anomalies.")
+        st.info("**Expected Outputs:** Rain-sensitivity slope calculations and weather-delay isolation metrics.")
         st.write("---")
         
-        st.markdown("### 🔬 JUPYTER NOTEBOOK METHODOLOGY BRIEF")
+        st.markdown("### 🔬 Notebook Analytical Engine Infrastructure Summary")
         st.markdown("""
-        * **Variable Mapping:** Cross-references dynamic hourly backfill weather streams (*rainfall_intensity_mm_hr* and atmospheric *visibility_meters*) directly with *travel_time_index_tti*.
-        * **Analytical Logic:** Isolates a Heavy Monsoon Anomaly ($\geq 16.0\text{ mm/hr}$), mapping a clear degradation bracket from **$45.1\%$ to $74.2\%$** relative to dry operational baselines.
-        * **Data Slice Requirement:** Cannot be initiated until we capture at least one significant spell of rain/monsoon activity to compare against the established dry baseline.
+        * **Variable Mapping Logic:** Links climate vectors (*rainfall_intensity_mm_hr* and *visibility_meters*) to identify drop-offs in network performance.
+        * **Statistical Profile:** Measures capacity reductions during heavy monsoon anomalies ($\ge 16.0\text{ mm/hr}$), mapping a clear degradation bracket from **$45.1\%$ to $74.2\%$** relative to dry baselines.
         """)
         st.write("---")
         
@@ -313,17 +311,16 @@ def main():
     elif selected_tab == "Hypothesis 7: The Flyover Exit & Gradients":
         st.header("Hypothesis 7: The 'Flyover Exit' & Uphill Gradient Penalties")
         
-        st.subheader("7. The 'Flyover Exit' & Uphill Gradient Penalties (Layered Networks) - (Atralita)")
-        st.error("**The Business Question:**\nDo steep inclines permanently slow down heavy fleets, and do express flyovers actually eliminate congestion or simply move the traffic jam to the at-grade off-ramp?")
-        st.success("**The Action:**\nWe will filter segments by their 3D topographical gradient and network_layer_type to map specific baseline speed drops on inclines and structural queuing at flyover merges.")
-        st.info("**Expected Outputs:**\nTopographical delay profiles and flyover-exit bottleneck maps.")
+        st.subheader("Executive Framework: Hypothesis 7 Specifications")
+        st.error("**The Business Question:** Do steep inclines permanently slow down heavy fleets, and do express flyovers actually eliminate congestion or simply move the traffic jam to the at-grade off-ramp?")
+        st.success("**The Action:** We will filter segments by their 3D topographical gradient and network_layer_type to map specific baseline speed drops on inclines and structural queuing at flyover merges.")
+        st.info("**Expected Outputs:** Topographical delay profiles and flyover-exit bottleneck maps.")
         st.write("---")
         
-        st.markdown("### 🔬 JUPYTER NOTEBOOK METHODOLOGY BRIEF")
+        st.markdown("### 🔬 Notebook Analytical Engine Infrastructure Summary")
         st.markdown("""
-        * **Variable Mapping:** Group-by pairings combining *network_layer_type* (Flyover Mainline vs. Down-Ramp Intersections) and physical *elevation_gradient* vectors.
-        * **Engineering Interpretation:** Isolates heavy truck crawl factors on severe grades against off-ramp bottleneck relocation indices ($BRI = \frac{\overline{TTI}_{\text{Ramp}}}{\overline{TTI}_{\text{Flyover}}}$).
-        * **Data Slice Requirement:** Static Elevation API data (Day 1) plus 7 days of traffic tracking to establish baseline speeds on inclines.
+        * **Variable Mapping Logic:** Filters links using *network_layer_type* properties and static terrain indicators (*elevation_gradient*).
+        * **Statistical Profile:** Decouples commercial fleet climbing speed reductions on steep uphill sections from off-ramp spillback delays.
         """)
         st.write("---")
         
@@ -365,17 +362,16 @@ def main():
     elif selected_tab == "Hypothesis 8: Spatial Length Dilution Bias":
         st.header("Hypothesis 8: Spatial Slicing Accuracy & 'Length Dilution'")
         
-        st.subheader("8. Spatial Slicing Accuracy & 'Length Dilution' - (Atralita)")
-        st.error("**The Business Question:**\nDoes analyzing a long stretch of road artificially hide severe, localized traffic jams by averaging the slow speeds with fast speeds?")
-        st.success("**The Action:**\nWe will correlate the true driving distance of each segment with its maximum peak-hour TTI spike to prove that standard end-to-end routing APIs historically underreport micro-congestion.")
-        st.info("**Expected Outputs:**\nData accuracy validation comparing sub-1km segments against standard corridor routing.")
+        st.subheader("Executive Framework: Hypothesis 8 Specifications")
+        st.error("**The Business Question:** Does analyzing a long stretch of road artificially hide severe, localized traffic jams by averaging the slow speeds with fast speeds?")
+        st.success("**The Action:** We will correlate the true driving distance of each segment with its maximum peak-hour TTI spike to prove that standard end-to-end routing APIs historically underreport micro-congestion.")
+        st.info("**Expected Outputs:** Data accuracy validation comparing sub-1km segments against standard corridor routing.")
         st.write("---")
         
-        st.markdown("### 🔬 JUPYTER NOTEBOOK METHODOLOGY BRIEF")
+        st.markdown("### 🔬 Notebook Analytical Engine Infrastructure Summary")
         st.markdown("""
-        * **Variable Mapping:** Analyzes *true_driving_distance_meters* logs generated via snapped GPS waypoints against localized peak-period *travel_time_index_tti* values.
-        * **Signal Frequency Analysis:** Proves that macro-segments behave like low-pass signal filters, mathematically compressing true bottleneck information entropy ($H_{\text{spatial}}$).
-        * **Data Slice Requirement:** 7 days of continuous traffic tracking data to map resolution decay boundaries.
+        * **Variable Mapping Logic:** Examines segment length measurements (*true_driving_distance_meters*) alongside peak commute interval *travel_time_index_tti* values.
+        * **Statistical Profile:** Evaluates information entropy decay patterns across different segment length classes (Micro-segments vs. Macro-corridors) to track data dilution trends.
         """)
         st.write("---")
         
