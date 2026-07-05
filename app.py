@@ -165,8 +165,8 @@ def main():
             df_fetched['current_travel_time_seconds'] = df_fetched['free_flow_travel_time_seconds'] * df_fetched['travel_time_index_tti']
 
         # Mathematical processing for core asset prioritization mapping
-        # Calculate true operational delay inflation (current minus free flow duration metrics)
         df_fetched['net_delay_seconds'] = df_fetched['current_travel_time_seconds'] - df_fetched['free_flow_travel_time_seconds']
+        df_fetched['net_delay_seconds'] = df_fetched['net_delay_seconds'].clip(lower=0)
         
         bottleneck_summary = df_fetched.groupby(['corridor_name', 'shapefile_segment_name']).agg(
             mean_tti=('travel_time_index_tti', 'mean'),
@@ -180,7 +180,8 @@ def main():
 
         # Plotting the real-world operational profiles layout
         st.write("### Root-Cause Analysis Matrix: Cumulative Delay Hours vs. Mean Travel Time Index")
-        fig, ax = plt.subplots(figsize=(10, 4.5))
+        
+        fig, ax = plt.subplots(figsize=(10, 5))
         
         # Generate high-fidelity system scatter layout
         sns.scatterplot(
@@ -189,7 +190,7 @@ def main():
             y='cumulative_delay_hours', 
             size='volatility_index',
             hue='corridor_name',
-            sizes=(80, 400),
+            sizes=(80, 300),
             alpha=0.85,
             edgecolor='black',
             linewidth=1.2,
@@ -199,20 +200,22 @@ def main():
         # Annotate top chronic structural bottlenecks directly over data coordinates
         for idx, row in bottleneck_summary.head(3).iterrows():
             ax.annotate(
-                row['shapefile_segment_name'],
+                row['shapefile_segment_name'].split('_')[0],
                 (row['mean_tti'], row['cumulative_delay_hours']),
                 textcoords="offset points", 
-                xytext=(0,12), 
+                xytext=(0, 10), 
                 ha='center', 
                 fontsize=8, 
                 fontweight='bold',
                 color='#b91c1c'
             )
             
-        ax.set_xlabel("Mean Travel Time Index (TTI Values Matrix)", fontweight='bold')
+        ax.set_xlabel("Mean Travel Time Index (TTI)", fontweight='bold')
         ax.set_ylabel("Total System Data Loss (Cumulative Delay Hours)", fontweight='bold')
         ax.grid(True, linestyle=':', alpha=0.5)
-        ax.legend(loc='upper left', bbox_to_anchor=(1, 1))
+        
+        # BUG FIX: Moved the legend anchor inside the canvas frame to prevent tight_layout bounding-box collapse
+        ax.legend(loc='best', fontsize=9)
         plt.tight_layout()
         st.pyplot(fig)
 
