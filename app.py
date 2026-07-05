@@ -22,6 +22,39 @@ st.markdown("""
     div.stButton > button:first-child {
         background-color: #1f77b4; color: white; border-radius: 6px; font-weight: bold;
     }
+    .framework-box {
+        background-color: #ffffff;
+        border-left: 5px solid #1f77b4;
+        padding: 1.2rem;
+        border-radius: 4px;
+        margin-bottom: 1.5rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .business-q {
+        color: #b91c1c;
+        font-weight: bold;
+        margin-top: 0.5rem;
+        margin-bottom: 0.5rem;
+    }
+    .action-strat {
+        color: #0f766e;
+        font-weight: bold;
+        margin-top: 0.5rem;
+        margin-bottom: 0.5rem;
+    }
+    .expected-out {
+        color: #4338ca;
+        font-weight: bold;
+        margin-top: 0.5rem;
+        margin-bottom: 0.5rem;
+    }
+    .methodology-box {
+        background-color: #f8fafc;
+        border: 1px solid #e2e8f0;
+        padding: 1rem;
+        border-radius: 4px;
+        margin-bottom: 1rem;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -41,7 +74,6 @@ def main():
         help="Provide the synthetic_telemetry_21_days.csv file here to feed the pipeline indices."
     )
     
-    # Guard clause: Stop processing if a data asset is not supplied to the cloud engine
     if uploaded_file is None:
         st.info("ℹ️ Application Awaiting Dataset Ingestion. Please upload 'synthetic_telemetry_21_days.csv' via the sidebar menu panel to run the analytics.")
         return
@@ -130,18 +162,25 @@ def main():
     elif selected_tab == "Hypothesis 1: Systemic Bottleneck Localization":
         st.header("Hypothesis 1: Systemic Bottleneck Localization (True vs. Spillover Traffic)")
         
-        # Native Streamlit layout container - completely fixes the blank text container bug
-        with st.container():
-            st.subheader("1. Systemic Bottleneck Localization (True vs. Spillover Traffic) - (Atralita)")
-            st.markdown("**The Business Question:**")
-            st.markdown(":red[Which specific micro-segments act as 'root cause' bottlenecks that create cascading spillover queues across the corridor, and where should engineers focus their attention first?]")
-            st.markdown("**The Action:**")
-            st.markdown(":green[By calculating the Travel Time Index (TTI) at a sub-1-kilometer resolution, we will mathematically separate high-TTI 'root cause' nodes from 'victim' segments that simply absorb the spillover traffic.]")
-            st.markdown("**Expected Outputs:**")
-            st.markdown(":blue[Corridor congestion rankings, segment-level hotspot maps, and a list of the top priority bottlenecks.]")
-            st.write("---")
+        st.markdown("""
+        <div class="framework-box">
+            <b>1. Systemic Bottleneck Localization (True vs. Spillover Traffic) - (Atralita)</b><br>
+            <div class="business-q">● The Business Question:</div> Which specific micro-segments act as "root cause" bottlenecks that create cascading spillover queues across the corridor, and where should engineers focus their attention first?<br>
+            <div class="action-strat">● The Action:</div> By calculating the Travel Time Index (TTI) at a sub-1-kilometer resolution, we will mathematically separate high-TTI "root cause" nodes from "victim" segments that simply absorb the spillover traffic.<br>
+            <div class="expected-out">● Expected Outputs:</div> Corridor congestion rankings, segment-level hotspot maps, and a list of the top priority bottlenecks.
+        </div>
+        """, unsafe_allow_html=True)
         
-        # FAIL-SAFE GUARD: If columns are blank/NaN or missing, generate delays from TTI directly to fix the blank plot bug
+        st.markdown("""
+        <div class="methodology-box">
+            <b>🔬 Integrated Engineering Analysis:</b><br>
+            • <b>Variable Mapping:</b> Maps <i>shapefile_segment_name</i> at a sub-1km bounds framework against calculated live <i>travel_time_index_tti</i> variables.<br>
+            • <b>API Baseline:</b> Google Routes API (v2) provides raw temporal travel durations (<i>current_travel_time_seconds</i>) against static zero-congestion vectors (<i>free_flow_travel_time_seconds</i>).<br>
+            • <b>Data Slice Requirement:</b> Operates on a continuous 7-to-14 day baseline window to isolate recurring localized chokepoints from volatile, random traffic spillover incidents.
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # FAIL-SAFE GUARD: Fallback baselines from travel_time_index_tti if missing
         if ('current_travel_time_seconds' not in df_fetched.columns or 
             'free_flow_travel_time_seconds' not in df_fetched.columns or 
             df_fetched['current_travel_time_seconds'].isnull().all()):
@@ -149,7 +188,6 @@ def main():
             df_fetched['free_flow_travel_time_seconds'] = 120.0
             df_fetched['current_travel_time_seconds'] = df_fetched['free_flow_travel_time_seconds'] * df_fetched['travel_time_index_tti']
 
-        # Safe delays aggregation processing loop
         df_fetched['net_delay_seconds'] = df_fetched['current_travel_time_seconds'] - df_fetched['free_flow_travel_time_seconds']
         df_fetched['net_delay_seconds'] = df_fetched['net_delay_seconds'].clip(lower=0)
         
@@ -198,15 +236,23 @@ def main():
     elif selected_tab == "Hypothesis 2: Temporal Peak Profiling":
         st.header("Hypothesis 2: Temporal Peak Profiling & Network Failure Rates")
         
-        with st.container():
-            st.subheader("2. Temporal Peak Profiling & Network Failure Rates - (Atralita)")
-            st.markdown("**The Business Question:**")
-            st.markdown(":red[At what precise minute does a road’s capacity fail, how long does it take for the traffic to clear out, and how does this cycle shift on weekends?]")
-            st.markdown("**The Action:**")
-            st.markdown(":green[We will track TTI at 15-minute intervals to plot the exact exponential degradation and recovery curves of the transit network.]")
-            st.markdown("**Expected Outputs:**")
-            st.markdown(":blue[Hourly congestion profiles, peak-hour identification tables, and weekday vs. weekend comparison dashboards.]")
-            st.write("---")
+        st.markdown("""
+        <div class="framework-box">
+            <b>2. Temporal Peak Profiling & Network Failure Rates - (Atralita)</b><br>
+            <div class="business-q">● The Business Question:</div> At what precise minute does a road’s capacity fail, how long does it take for the traffic to clear out, and how does this cycle shift on weekends?<br>
+            <div class="action-strat">● The Action:</div> We will track TTI at 15-minute intervals to plot the exact exponential degradation and recovery curves of the transit network.<br>
+            <div class="expected-out">● Expected Outputs:</div> Hourly congestion profiles, peak-hour identification tables, and weekday vs. weekend comparison dashboards.
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("""
+        <div class="methodology-box">
+            <b>🔬 Integrated Engineering Analysis:</b><br>
+            • <b>Variable Mapping:</b> Pairs <i>hour_of_day</i> (temporal marker [0-23] async poll) and binary <i>is_weekend</i> markers directly with live <i>travel_time_index_tti</i> arrays.<br>
+            • <b>API Baseline:</b> Captures within-day peak windows and speed dissipation patterns across active office commute cycles vs. leisure behaviors.<br>
+            • <b>Data Slice Requirement:</b> Minimum of 7 days continuous tracking data (must encompass at least one full Saturday and Sunday) to map calendar variance profiles.
+        </div>
+        """, unsafe_allow_html=True)
         
         if 'is_weekend' not in df_fetched.columns:
             df_fetched['is_weekend'] = 0
@@ -259,15 +305,23 @@ def main():
     elif selected_tab == "Hypothesis 4: Weather-Driven Variance":
         st.header("Hypothesis 4: Measuring Weather-Driven Environmental Variance")
         
-        with st.container():
-            st.subheader("4. Measuring Weather-Driven Environmental Variance - (Atralita)")
-            st.markdown("**The Business Question:**")
-            st.markdown(":red[Exactly how much does rain degrade our transit network capacity compared to a normal dry day, and can we mathematically isolate these events?]")
-            st.markdown("**The Action:**")
-            st.markdown(":green[By mapping localized rainfall intensity and visibility limits directly over our descriptive traffic speed data, we will test the hypothesis that certain severe traffic spikes are purely weather anomalies.]")
-            st.markdown("**Expected Outputs:**")
-            st.markdown(":blue[Rain-sensitivity slope calculations and weather-delay isolation metrics.]")
-            st.write("---")
+        st.markdown("""
+        <div class="framework-box">
+            <b>4. Measuring Weather-Driven Environmental Variance - (Atralita)</b><br>
+            <div class="business-q">● The Business Question:</div> Exactly how much does rain degrade our transit network capacity compared to a normal dry day, and can we mathematically isolate these events?<br>
+            <div class="action-strat">● The Action:</div> By mapping localized rainfall intensity and visibility limits directly over our descriptive traffic speed data, we will test the hypothesis that certain severe traffic spikes are purely weather anomalies.<br>
+            <div class="expected-out">● Expected Outputs:</div> Rain-sensitivity slope calculations and weather-delay isolation metrics.
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("""
+        <div class="methodology-box">
+            <b>🔬 Integrated Engineering Analysis:</b><br>
+            • <b>Variable Mapping:</b> Cross-references dynamic hourly backfill weather streams (<i>precipitation_intensity_mm_h</i> and atmospheric <i>visibility_meters</i>) directly with <i>travel_time_index_tti</i>.<br>
+            • <b>API Baseline:</b> Substitutes traditional weather telemetry using Open-Meteo climate analytics data arrays to extract shock vectors.<br>
+            • <b>Data Slice Requirement:</b> Requires an active pipeline lock on at least one significant rain/monsoon atmospheric event to compare index values cleanly against an established dry baseline.
+        </div>
+        """, unsafe_allow_html=True)
         
         if 'rainfall_intensity_mm_hr' not in df_fetched.columns:
             np.random.seed(42)
@@ -286,7 +340,7 @@ def main():
         df_fetched['weather_state'] = np.select(conditions, choices, default='0_Dry Baseline')
 
         st.write("### Weather-Delay Isolation Metrics Breakdown Matrix")
-        pivot_weather = df_fetched.pivot_table(values='travel_time_index_tti', index='corridor_name', columns='weather_state', Turk='mean')
+        pivot_weather = df_fetched.pivot_table(values='travel_time_index_tti', index='corridor_name', columns='weather_state', aggfunc='mean')
         st.dataframe(pivot_weather, use_container_width=True)
         
         fig, ax = plt.subplots(figsize=(10, 4))
@@ -302,15 +356,23 @@ def main():
     elif selected_tab == "Hypothesis 7: The Flyover Exit & Gradients":
         st.header("Hypothesis 7: The 'Flyover Exit' & Uphill Gradient Penalties")
         
-        with st.container():
-            st.subheader("7. The 'Flyover Exit' & Uphill Gradient Penalties (Layered Networks) - (Atralita)")
-            st.markdown("**The Business Question:**")
-            st.markdown(":red[Do steep inclines permanently slow down heavy fleets, and do express flyovers actually eliminate congestion or simply move the traffic jam to the at-grade off-ramp?]")
-            st.markdown("**The Action:**")
-            st.markdown(":green[We will filter segments by their 3D topographical gradient and network_layer_type to map specific baseline speed drops on inclines and structural queuing at flyover merges.]")
-            st.markdown("**Expected Outputs:**")
-            st.markdown(":blue[Topographical delay profiles and flyover-exit bottleneck maps.]")
-            st.write("---")
+        st.markdown("""
+        <div class="framework-box">
+            <b>7. The "Flyover Exit" & Uphill Gradient Penalties (Layered Networks) - (Atralita)</b><br>
+            <div class="business-q">● The Business Question:</div> Do steep inclines permanently slow down heavy fleets, and do express flyovers actually eliminate congestion or simply move the traffic jam to the at-grade off-ramp?<br>
+            <div class="action-strat">● The Action:</div> We will filter segments by their 3D topographical gradient and network_layer_type to map specific baseline speed drops on inclines and structural queuing at flyover merges.<br>
+            <div class="expected-out">● Expected Outputs:</div> Topographical delay profiles and flyover-exit bottleneck maps.
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("""
+        <div class="methodology-box">
+            <b>🔬 Integrated Engineering Analysis:</b><br>
+            • <b>Variable Mapping:</b> Classifies physical infrastructure grade separation markers (<i>network_layer_type</i>: Express Flyover vs. At-Grade) and calculated incline steps (<i>segment_slope_grade</i> via MSL midpoint delta).<br>
+            • <b>API Baseline:</b> Google/Open-Elevation endpoints generate static topological grids to isolate incline-related crawl penalties.<br>
+            • <b>Data Slice Requirement:</b> Combines a Day 1 static infrastructure profile with 7 days of continuous operational data logs to calculate climbing performance benchmarks.
+        </div>
+        """, unsafe_allow_html=True)
         
         df_fetched['network_layer_type'] = 'Standard At-Grade Link'
         df_fetched['elevation_gradient'] = 0.2
@@ -350,15 +412,23 @@ def main():
     elif selected_tab == "Hypothesis 8: Spatial Length Dilution Bias":
         st.header("Hypothesis 8: Spatial Slicing Accuracy & 'Length Dilution'")
         
-        with st.container():
-            st.subheader("8. Spatial Slicing Accuracy & 'Length Dilution' - (Atralita)")
-            st.markdown("**The Business Question:**")
-            st.markdown(":red[Does analyzing a long stretch of road artificially hide severe, localized traffic jams by averaging the slow speeds with fast speeds?]")
-            st.markdown("**The Action:**")
-            st.markdown(":green[We will correlate the true driving distance of each segment with its maximum peak-hour TTI spike to prove that standard end-to-end routing APIs historically underreport micro-congestion.]")
-            st.markdown("**Expected Outputs:**")
-            st.markdown(":blue[Data accuracy validation comparing sub-1km segments against standard corridor routing.]")
-            st.write("---")
+        st.markdown("""
+        <div class="framework-box">
+            <b>8. Spatial Slicing Accuracy & "Length Dilution" - (Atralita)</b><br>
+            <div class="business-q">● The Business Question:</div> Does analyzing a long stretch of road artificially hide severe, localized traffic jams by averaging the slow speeds with fast speeds?<br>
+            <div class="action-strat">● The Action:</div> We will correlate the true driving distance of each segment with its maximum peak-hour TTI spike to prove that standard end-to-end routing APIs historically underreport micro-congestion.<br>
+            <div class="expected-out">● Expected Outputs:</div> Data accuracy validation comparing sub-1km segments against standard corridor routing.
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("""
+        <div class="methodology-box">
+            <b>🔬 Integrated Engineering Analysis:</b><br>
+            • <b>Variable Mapping:</b> Groups absolute odometer metric lengths (<i>true_driving_distance_meters</i>) derived via geometric map paths against live peak-window <i>travel_time_index_tti</i> bounds.<br>
+            • <b>API Baseline:</b> Tracks how macroscopic distance extensions thin out critical bottleneck indicators via numerical smoothing errors.<br>
+            • <b>Data Slice Requirement:</b> Uses a minimum 7-day traffic tracking slice to verify information density losses on longer segments.
+        </div>
+        """, unsafe_allow_html=True)
         
         if 'true_driving_distance_meters' not in df_fetched.columns:
             distance_map = {
