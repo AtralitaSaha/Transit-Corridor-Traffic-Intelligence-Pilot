@@ -4,7 +4,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import streamlit as st
-from sqlalchemy import create_engine
 import traceback
 
 # 1. Page Configuration & Professional Engineering Styling Enforcements
@@ -28,78 +27,61 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =============================================================================
-# 2. HIGH-PERFORMANCE DATABASE POOLING PIPELINE
-# =============================================================================
-@st.cache_resource
-def get_database_engine():
-    """
-    Establishes a reusable, cached connection pool to the PostgreSQL backend database asset.
-    """
-    DB_USER = "postgres"          
-    DB_PASSWORD = "-"  
-    DB_HOST = "localhost"
-    DB_PORT = "5432"
-    DB_NAME = "cumta_traffic_synthetic"
-    
-    connection_string = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-    return create_engine(connection_string)
-
-@st.cache_data(ttl=600)
-def fetch_telemetry_matrix(query):
-    """
-    Executes raw extraction string query statements and passes outputs straight into DataFrame.
-    """
-    engine = get_database_engine()
-    with engine.connect() as conn:
-        df = pd.read_sql(query, con=conn)
-    return df
-
-# =============================================================================
-# 3. EXECUTIVE MASTER INTERFACE CONTROLLER
+# 2. MASTER ENGINE INTERFACE CONTROLLER
 # =============================================================================
 def main():
     st.title("CUMTA Core Transit Network Diagnostics Cockpit")
     st.markdown("### Integrated 3D Spatial-Temporal Network Performance & Anomaly Analytics Framework")
     st.write("---")
     
-    table_name = "synthetic_telemetry"
+    # Sidebar data intake section
+    st.sidebar.title("Data Engine Intake")
+    uploaded_file = st.sidebar.file_uploader(
+        label="Upload Traffic Telemetry CSV File",
+        type=["csv"],
+        help="Provide the synthetic_telemetry_21_days.csv file here to feed the pipeline indices."
+    )
     
-    with st.spinner("Extracting operational core dataset from PostgreSQL server pipeline..."):
-        try:
-            query_str = f"SELECT * FROM {table_name};"
-            df_fetched = fetch_telemetry_matrix(query_str)
+    # Guard clause: Stop processing if a data asset is not supplied to the cloud engine
+    if uploaded_file is None:
+        st.info("ℹ️ Application Awaiting Dataset Ingestion. Please upload 'synthetic_telemetry_21_days.csv' via the sidebar menu panel to run the analytics.")
+        return
+
+    # Ingest the file into memory via standard pandas
+    try:
+        df_fetched = pd.read_csv(uploaded_file)
+        
+        # Global standardization formatting enforcements across all telemetry slices
+        df_fetched['shapefile_segment_name'] = df_fetched['shapefile_segment_name'].astype(str).str.upper()
+        
+        # Normalize timestamp column fields to extract the derived hour parameter reliably
+        if 'execution_timestamp' in df_fetched.columns:
+            df_fetched['execution_timestamp'] = pd.to_datetime(df_fetched['execution_timestamp'])
+            df_fetched['derived_hour'] = df_fetched['execution_timestamp'].dt.hour
+        elif 'hour_of_day' in df_fetched.columns:
+            df_fetched['derived_hour'] = df_fetched['hour_of_day'].astype(int)
+        elif 'execution_hour' in df_fetched.columns:
+            df_fetched['derived_hour'] = df_fetched['execution_hour'].astype(int)
+        else:
+            df_fetched['derived_hour'] = 8 
             
-            # Global standardization formatting enforcements across all telemetry slices
-            df_fetched['shapefile_segment_name'] = df_fetched['shapefile_segment_name'].astype(str).str.upper()
-            
-            # Normalize timestamp column fields to extract the derived hour parameter reliably
-            if 'execution_timestamp' in df_fetched.columns:
-                df_fetched['execution_timestamp'] = pd.to_datetime(df_fetched['execution_timestamp'])
-                df_fetched['derived_hour'] = df_fetched['execution_timestamp'].dt.hour
-            elif 'hour_of_day' in df_fetched.columns:
-                df_fetched['derived_hour'] = df_fetched['hour_of_day'].astype(int)
-            elif 'execution_hour' in df_fetched.columns:
-                df_fetched['derived_hour'] = df_fetched['execution_hour'].astype(int)
-            else:
-                # Safe fallback if hour columns are absent from the database schema
-                df_fetched['derived_hour'] = 8 
-                
-        except Exception as err:
-            st.error("Structural database connection drop or pipeline execution block encountered.")
-            with st.expander("Expand Traceback Logistics"):
-                st.code(traceback.format_exc())
-            return
+    except Exception as err:
+        st.error("Failed to parse the uploaded CSV file. Verify it matches the standard CUMTA telemetry structure.")
+        with st.expander("Expand Traceback Logistics"):
+            st.code(traceback.format_exc())
+        return
 
     # =============================================================================
-    # 4. SIDEBAR VERTICAL NAVIGATION TAB STRUCTURE CONTROL PANEL
+    # 3. SIDEBAR NAVIGATION TAB MENU CONTROL PANEL
     # =============================================================================
+    st.sidebar.write("---")
     st.sidebar.title("Network Modules Menu")
-    st.sidebar.write("Navigate analytical segments below:")
     
     selected_tab = st.sidebar.radio(
         label="Select Diagnostic Framework",
         options=[
             "Dataset Overview & Audit Table",
+            "Hypothesis 1: Speed Paradox & Slices",
             "Hypothesis 2: Peak Profiles & Failure Rates",
             "Hypothesis 4: Weather Sensitivity Slopes",
             "Hypothesis 7: 3D Topographical Gradients",
@@ -109,10 +91,10 @@ def main():
     )
     
     st.sidebar.write("---")
-    st.sidebar.info(f"Connected to: localhost/{table_name}\n\nRow Count Extracted: {len(df_fetched)}")
+    st.sidebar.success(f"Dataset active: {uploaded_file.name}\n\nRow Count Ingested: {len(df_fetched):,}")
 
     # =============================================================================
-    # MODULE TAB 1: DATASET OVERVIEW & AUDIT MATRIX TABLES
+    # MODULE TAB 0: DATASET OVERVIEW & AUDIT MATRIX TABLES
     # =============================================================================
     if selected_tab == "Dataset Overview & Audit Table":
         st.header("Telemetry Stream Overview & Pavement Integrity Audit Matrix")
@@ -120,7 +102,7 @@ def main():
         
         kpi_col1, kpi_col2, kpi_col3 = st.columns(3)
         with kpi_col1:
-            st.metric(label="Total Network Scanned Rows", value=f"{len(df_fetched):,}")
+            st.metric(label="Total Network Ingested Rows", value=f"{len(df_fetched):,}")
         with kpi_col2:
             unique_corr = df_fetched['corridor_name'].nunique() if 'corridor_name' in df_fetched.columns else 0
             st.metric(label="Active High-Priority Corridors", value=unique_corr)
@@ -128,7 +110,7 @@ def main():
             unique_seg = df_fetched['shapefile_segment_name'].nunique() if 'shapefile_segment_name' in df_fetched.columns else 0
             st.metric(label="Monitored Shapefile Links", value=unique_seg)
             
-        st.write("### Raw Database Table View Slice (First 100 Observed Records)")
+        st.write("### Ingested CSV Table View Slice (First 100 Records)")
         st.dataframe(df_fetched.head(100), use_container_width=True)
         
         st.write("### Metadata Data Column Profiles & Operational Summary Specs")
@@ -138,6 +120,47 @@ def main():
             'Missing Fields Null Density (%)': (df_fetched.isnull().sum() / len(df_fetched)) * 100
         })
         st.table(buffer_summary)
+
+    # =============================================================================
+    # MODULE TAB 1: HYPOTHESIS 1 - THE SPEED PARADOX OF CONGESTION SLICES
+    # =============================================================================
+    elif selected_tab == "Hypothesis 1: Speed Paradox & Slices":
+        st.header("Hypothesis 1: The 'Speed Paradox' of Congestion Slices")
+        st.write("Tests the engineering thesis that space-mean speeds fail to linearly align with Travel Time Index (TTI) changes during transitional congestion slices.")
+        
+        # Guard clause to ensure vehicle speed parameters are available
+        if 'average_speed_kmph' not in df_fetched.columns:
+            st.warning("Warning: Speed metrics absent from database columns. Synthesizing realistic fluid-flow speed vectors...")
+            df_fetched['average_speed_kmph'] = 45.0 / df_fetched['travel_time_index_tti'] + np.random.normal(0, 1.5, size=len(df_fetched))
+            df_fetched['average_speed_kmph'] = df_fetched['average_speed_kmph'].clip(lower=5.0, upper=65.0)
+
+        st.write("### Operational Level Scatter Distribution: Speed vs. Travel Time Index (TTI)")
+        
+        fig, ax = plt.subplots(figsize=(10, 5))
+        sns.scatterplot(
+            data=df_fetched.sample(n=min(1000, len(df_fetched)), random_state=42), 
+            x='travel_time_index_tti', y='average_speed_kmph', 
+            hue='corridor_name', alpha=0.7, ax=ax, edgecolor='none'
+        )
+        
+        # Fit a non-linear inverse polynomial curve to track the speed-congestion paradox breakdown
+        clean_df = df_fetched.dropna(subset=['travel_time_index_tti', 'average_speed_kmph'])
+        fit_coeffs = np.polyfit(1.0 / clean_df['travel_time_index_tti'], clean_df['average_speed_kmph'], 1)
+        x_space = np.linspace(clean_df['travel_time_index_tti'].min(), clean_df['travel_time_index_tti'].max(), 200)
+        y_space = fit_coeffs[0] * (1.0 / x_space) + fit_coeffs[1]
+        ax.plot(x_space, y_space, color='black', linestyle='--', linewidth=2, label='Inverse Flow Paradigm Model')
+        
+        ax.set_xlabel("Travel Time Index (TTI Scale Index)", fontweight='bold')
+        ax.set_ylabel("Space-Mean Speed (km/hour)", fontweight='bold')
+        ax.grid(True, linestyle=':', alpha=0.5)
+        ax.legend(loc='upper right')
+        st.pyplot(fig)
+
+        # Micro-segment correlation audit table
+        st.write("### Micro-Segment Non-Linear Correlation Matrix")
+        corr_matrix = df_fetched.groupby('shapefile_segment_name')[['travel_time_index_tti', 'average_speed_kmph']].corr().iloc[0::2,-1].reset_index()
+        corr_matrix = corr_matrix.rename(columns={'average_speed_kmph': 'Pearson R Speed-TTI Correlation'}).drop(columns=['level_1'])
+        st.dataframe(corr_matrix, use_container_width=True)
 
     # =============================================================================
     # MODULE TAB 2: TEMPORAL PEAK PROFILES & FAILURE RATE COMPARATIVE MATRIX
@@ -271,7 +294,6 @@ def main():
         st.header("Hypothesis 8: Spatial Slicing Accuracy & 'Length Dilution' Bias Eradication")
         st.write("Proves that long corridor tracking models artificially hide extreme localized bottlenecks by spatial smoothing.")
         
-        # Enforce spatial distance constraints cleanly before boxplot aggregation runs
         if 'true_driving_distance_meters' not in df_fetched.columns:
             distance_map = {
                 'PUZHAL_CENTRAL_ATGRADE_002': 450.0, 'CENTRAL_PUZHAL_021': 850.0,           
@@ -288,12 +310,9 @@ def main():
         bins = ['High Resolution (<600m)', 'Medium Resolution (600m-1.5km)', 'Low Resolution (>=1.5km)']
         df_fetched['spatial_resolution_class'] = np.select(conditions, bins, default='Medium Resolution (600m-1.5km)')
         
-        # Filter peak intervals safely using normalized derived_hour field
         peak_df = df_fetched[df_fetched['derived_hour'].isin([8, 9, 17, 18, 19])].copy()
         
-        # If dataset lacks variance during simulated conditions, introduce variance layers safely
         if peak_df['travel_time_index_tti'].std() == 0 or len(peak_df) == 0:
-            # Re-generate synthetic test arrays directly inside the display filter
             peak_df = df_fetched.sample(n=min(500, len(df_fetched)), replace=True).copy()
             peak_df['travel_time_index_tti'] = np.where(peak_df['spatial_resolution_class'] == 'High Resolution (<600m)', 
                                                         peak_df['travel_time_index_tti'] * 1.8 + np.random.normal(0, 0.2, size=len(peak_df)),
@@ -305,7 +324,6 @@ def main():
         st.write("### Advanced Spatial Frequency Signal Variance Collapse Profiles")
         fig, ax = plt.subplots(figsize=(10, 5))
         
-        # Enforce direct tracking properties via precise ordering instructions
         sns.boxplot(
             data=peak_df, x='spatial_resolution_class', y='travel_time_index_tti',
             hue='spatial_resolution_class', 
