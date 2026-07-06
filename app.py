@@ -130,7 +130,7 @@ def main():
     elif selected_tab == "Hypothesis 1: Systemic Bottleneck Localization":
         st.header("Hypothesis 1: Systemic Bottleneck Localization (True vs. Spillover Traffic)")
         
-        st.subheader("1. Systemic Bottleneck Localization (True vs. Spillover Traffic) - (Atralita)")
+        st.subheader("1. Systemic Bottleneck Localization (True vs. Spillover Traffic) ")
         st.error("**The Business Question:**\nWhich specific micro-segments act as 'root cause' bottlenecks that create cascading spillover queues across the corridor, and where should engineers focus their attention first?")
         st.success("**The Action:**\nBy calculating the Travel Time Index (TTI) at a sub-1-kilometer resolution, we will mathematically separate high-TTI 'root cause' nodes from 'victim' segments that simply absorb the spillover traffic.")
         st.info("**Expected Outputs:**\nCorridor congestion rankings, segment-level hotspot maps, and a list of the top priority bottlenecks.")
@@ -260,7 +260,7 @@ def main():
     elif selected_tab == "Hypothesis 2: Temporal Peak Profiling":
         st.header("Hypothesis 2: Temporal Peak Profiling & Network Failure Rates")
         
-        st.subheader("2. Temporal Peak Profiling & Network Failure Rates - (Atralita)")
+        st.subheader("2. Temporal Peak Profiling & Network Failure Rates ")
         st.error("**The Business Question:**\nAt what precise minute does a road’s capacity fail, how long does it take for the traffic to clear out, and how does this cycle shift on weekends?")
         st.success("**The Action:**\nWe will track TTI at 15-minute intervals to plot the exact exponential degradation and recovery curves of the transit network.")
         st.info("**Expected Outputs:**\nHourly congestion profiles, peak-hour identification tables, and weekday vs. weekend comparison dashboards.")
@@ -372,7 +372,7 @@ def main():
     elif selected_tab == "Hypothesis 4: Weather-Driven Variance":
         st.header("Hypothesis 4: Measuring Weather-Driven Environmental Variance")
         
-        st.subheader("4. Measuring Weather-Driven Environmental Variance - (Atralita)")
+        st.subheader("4. Measuring Weather-Driven Environmental Variance ")
         st.error("**The Business Question:**\nExactly how much does rain degrade our transit network capacity compared to a normal dry day, and can we mathematically isolate these events?")
         st.success("**The Action:**\nBy mapping localized rainfall intensity and visibility limits directly over our descriptive traffic speed data, we will test the hypothesis that certain severe traffic spikes are purely weather anomalies.")
         st.info("**Expected Outputs:**\nRain-sensitivity slope calculations and weather-delay isolation metrics.")
@@ -473,7 +473,7 @@ def main():
     elif selected_tab == "Hypothesis 7: The Flyover Exit & Gradients":
         st.header("Hypothesis 7: The 'Flyover Exit' & Uphill Gradient Penalties")
         
-        st.subheader("7. The 'Flyover Exit' & Uphill Gradient Penalties (Layered Networks) - (Atralita)")
+        st.subheader("7. The 'Flyover Exit' & Uphill Gradient Penalties (Layered Networks) ")
         st.error("**The Business Question 1:** Do steep inclines permanently slow down heavy fleets?")
         st.markdown("> **Business Answer:** Yes. Uphill grades introduce an invariant physical crawl penalty that baseline operations cannot fix. Data traces confirm that micro-segments with steep climbs (>6% incline) suffer a structural TTI inflation of 0.42 to 0.45 across all operational hours. Heavy commercial fleets and buses suffer massive power-to-weight ratio loss on these ascents, dropping to crawl speeds and generating a permanent upstream queue wave.\n\n> **Real-Life Intervention:** Implement a mandatory 'Crawler Lane' policy for heavy vehicles and adjust upstream pavement markings to prevent passenger cars from becoming trapped behind low-velocity truck fleets.")
         
