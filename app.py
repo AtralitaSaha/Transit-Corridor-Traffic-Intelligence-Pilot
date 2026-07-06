@@ -86,9 +86,14 @@ def main():
             "Dataset Overview & Audit Table",
             "Hypothesis 1: Systemic Bottleneck Localization",
             "Hypothesis 2: Temporal Peak Profiling",
+            "Hypothesis 3: Geometric Constraints",
             "Hypothesis 4: Weather-Driven Variance",
+            "Hypothesis 5: Tidal Flow Asymmetry",
+            "Hypothesis 6: Commuter Uncertainty",
             "Hypothesis 7: The Flyover Exit & Gradients",
-            "Hypothesis 8: Spatial Length Dilution Bias"
+            "Hypothesis 8: Spatial Length Dilution Bias",
+            "Hypothesis 9: Unsupervised Taxonomy Clustering",
+            "Hypothesis 10: Traffic Volume via AQI Proxy"
         ],
         index=0
     )
@@ -130,7 +135,7 @@ def main():
     elif selected_tab == "Hypothesis 1: Systemic Bottleneck Localization":
         st.header("Hypothesis 1: Systemic Bottleneck Localization (True vs. Spillover Traffic)")
         
-        st.subheader("1. Systemic Bottleneck Localization (True vs. Spillover Traffic) ")
+        st.subheader("1. Systemic Bottleneck Localization (True vs. Spillover Traffic)")
         st.error("**The Business Question:**\nWhich specific micro-segments act as 'root cause' bottlenecks that create cascading spillover queues across the corridor, and where should engineers focus their attention first?")
         st.success("**The Action:**\nBy calculating the Travel Time Index (TTI) at a sub-1-kilometer resolution, we will mathematically separate high-TTI 'root cause' nodes from 'victim' segments that simply absorb the spillover traffic.")
         st.info("**Expected Outputs:**\nCorridor congestion rankings, segment-level hotspot maps, and a list of the top priority bottlenecks.")
@@ -260,7 +265,7 @@ def main():
     elif selected_tab == "Hypothesis 2: Temporal Peak Profiling":
         st.header("Hypothesis 2: Temporal Peak Profiling & Network Failure Rates")
         
-        st.subheader("2. Temporal Peak Profiling & Network Failure Rates ")
+        st.subheader("2. Temporal Peak Profiling & Network Failure Rates")
         st.error("**The Business Question:**\nAt what precise minute does a road’s capacity fail, how long does it take for the traffic to clear out, and how does this cycle shift on weekends?")
         st.success("**The Action:**\nWe will track TTI at 15-minute intervals to plot the exact exponential degradation and recovery curves of the transit network.")
         st.info("**Expected Outputs:**\nHourly congestion profiles, peak-hour identification tables, and weekday vs. weekend comparison dashboards.")
@@ -367,12 +372,25 @@ def main():
             st.pyplot(fig_line)
 
     # =============================================================================
-    # MODULE TAB 3: HYPOTHESIS 4 - WEATHER-DRIVEN VARIANCE
+    # MODULE TAB 3: HYPOTHESIS 3 - GEOMETRIC CONSTRAINTS
+    # =============================================================================
+    elif selected_tab == "Hypothesis 3: Geometric Constraints":
+        st.header("Hypothesis 3: Structural Choke Points & Geometric Constraints")
+        
+        st.subheader("3. Structural Choke Points & Geometric Constraints")
+        st.error("**The Business Question:**\nAre specific infrastructure features-such as physical lane drops, poorly placed bus stops, or dense clusters of traffic signals-the primary drivers of localized congestion?")
+        st.success("**The Action:**\nWe will cross-reference traffic speed data against static map layers containing intersection locations and road widths to classify whether congestion is 'Structural' (permanent design flaws) or 'Temporal' (rush-hour volume).")
+        st.info("**Expected Outputs:**\nStructural vs. Temporal congestion maps, lane-drop bottleneck inventories, and signal influence impact assessments.")
+        st.write("---")
+        st.info("💡 Data layer execution configuration pending final spatial shapefile overlay mapping.")
+
+    # =============================================================================
+    # MODULE TAB 4: HYPOTHESIS 4 - WEATHER-DRIVEN VARIANCE
     # =============================================================================
     elif selected_tab == "Hypothesis 4: Weather-Driven Variance":
         st.header("Hypothesis 4: Measuring Weather-Driven Environmental Variance")
         
-        st.subheader("4. Measuring Weather-Driven Environmental Variance ")
+        st.subheader("4. Measuring Weather-Driven Environmental Variance")
         st.error("**The Business Question:**\nExactly how much does rain degrade our transit network capacity compared to a normal dry day, and can we mathematically isolate these events?")
         st.success("**The Action:**\nBy mapping localized rainfall intensity and visibility limits directly over our descriptive traffic speed data, we will test the hypothesis that certain severe traffic spikes are purely weather anomalies.")
         st.info("**Expected Outputs:**\nRain-sensitivity slope calculations and weather-delay isolation metrics.")
@@ -468,12 +486,38 @@ def main():
             st.pyplot(fig_w)
 
     # =============================================================================
-    # MODULE TAB 4: HYPOTHESIS 7 - FLYOVER EXIT & UPHILL GRADIENTS
+    # MODULE TAB 5: HYPOTHESIS 5 - TIDAL FLOW ASYMMETRY
+    # =============================================================================
+    elif selected_tab == "Hypothesis 5: Tidal Flow Asymmetry":
+        st.header("Hypothesis 5: Directional 'Tidal Flow' & Commuter Asymmetry")
+        
+        st.subheader("5. Directional 'Tidal Flow' & Commuter Asymmetry")
+        st.error("**The Business Question:**\nDoes traffic congestion perfectly mirror itself during morning and evening commutes, or is there a severe directional imbalance that could justify dynamic lane management (e.g., reversible lanes)?")
+        st.success("**The Action:**\nWe will separate segments by their exact directional tags and compare their TTI degradation during the morning versus the evening peaks to quantify commuter asymmetry.")
+        st.info("**Expected Outputs:**\nDirectional congestion heatmaps, hourly asymmetry profiles, and tidal-flow commuter corridor identification.")
+        st.write("---")
+        st.info("💡 Data layer execution configuration pending final spatial shapefile overlay mapping.")
+
+    # =============================================================================
+    # MODULE TAB 6: HYPOTHESIS 6 - COMMUTER UNCERTAINTY
+    # =============================================================================
+    elif selected_tab == "Hypothesis 6: Commuter Uncertainty":
+        st.header("Hypothesis 6: Travel Time Predictability & Commuter Uncertainty")
+        
+        st.subheader("6. Travel Time Predictability & Commuter Uncertainty")
+        st.error("**The Business Question:**\nWhich segments are the most unpredictable and unreliable for commuters, creating the greatest need for travel-time safety margins?")
+        st.success("**The Action:**\nWe will measure the daily variance and standard deviation of travel times on specific segments to generate a 'reliability score.'")
+        st.info("**Expected Outputs:**\nSegment reliability rankings, travel-time uncertainty maps, and identification of high-risk commuter corridors.")
+        st.write("---")
+        st.info("💡 Data layer execution configuration pending final spatial shapefile overlay mapping.")
+
+    # =============================================================================
+    # MODULE TAB 7: HYPOTHESIS 7 - FLYOVER EXIT & UPHILL GRADIENTS
     # =============================================================================
     elif selected_tab == "Hypothesis 7: The Flyover Exit & Gradients":
         st.header("Hypothesis 7: The 'Flyover Exit' & Uphill Gradient Penalties")
         
-        st.subheader("7. The 'Flyover Exit' & Uphill Gradient Penalties (Layered Networks) ")
+        st.subheader("7. The 'Flyover Exit' & Uphill Gradient Penalties (Layered Networks)")
         st.error("**The Business Question 1:** Do steep inclines permanently slow down heavy fleets?")
         st.markdown("> **Business Answer:** Yes. Uphill grades introduce an invariant physical crawl penalty that baseline operations cannot fix. Data traces confirm that micro-segments with steep climbs (>6% incline) suffer a structural TTI inflation of 0.42 to 0.45 across all operational hours. Heavy commercial fleets and buses suffer massive power-to-weight ratio loss on these ascents, dropping to crawl speeds and generating a permanent upstream queue wave.\n\n> **Real-Life Intervention:** Implement a mandatory 'Crawler Lane' policy for heavy vehicles and adjust upstream pavement markings to prevent passenger cars from becoming trapped behind low-velocity truck fleets.")
         
@@ -587,7 +631,7 @@ def main():
         st.pyplot(fig_g2)
 
     # =============================================================================
-    # MODULE TAB 5: HYPOTHESIS 8 - SPATIAL LENGTH DILUTION BIAS
+    # MODULE TAB 8: HYPOTHESIS 8 - SPATIAL LENGTH DILUTION BIAS
     # =============================================================================
     elif selected_tab == "Hypothesis 8: Spatial Length Dilution Bias":
         st.header("Hypothesis 8: Spatial Slicing Accuracy & 'Length Dilution'")
@@ -686,6 +730,33 @@ def main():
         
         plt.tight_layout()
         st.pyplot(fig_h8)
+
+    # =============================================================================
+    # MODULE TAB 9: HYPOTHESIS 9 - TAXONOMY CLUSTERING
+    # =============================================================================
+    elif selected_tab == "Hypothesis 9: Unsupervised Taxonomy Clustering":
+        st.header("Hypothesis 9: Unsupervised Network Taxonomy Clustering")
+        
+        st.subheader("9. Unsupervised Network Taxonomy Clustering")
+        st.error("**The Business Question:**\nHow can we classify all 137 segments into distinct behavioral groups so CUMTA can manage the network using standardized policy templates?")
+        st.success("**The Action:**\nWe will feed the derived segment metrics into an unsupervised clustering algorithm (e.g., K-Means) to group roads with identical failure mechanics together.")
+        st.info("**Expected Outputs:**\nNetwork taxonomy map, cluster-specific corridor profiles, and standardized intervention recommendations.")
+        st.write("---")
+        st.info("💡 Data layer execution configuration pending final spatial shapefile overlay mapping.")
+
+    # =============================================================================
+    # MODULE TAB 10: HYPOTHESIS 10 - VOLUME VIA AQI PROXY
+    # =============================================================================
+    elif selected_tab == "Hypothesis 10: Traffic Volume via AQI Proxy":
+        st.header("Hypothesis 10: Estimating Traffic Volume via the Air Quality Index (AQI Proxy)")
+        
+        st.subheader("10. Estimating Traffic Volume via the Air Quality Index (AQI Proxy)")
+        st.error("**The Business Question:**\nSince mapping APIs do not share exact vehicle counts, how can we mathematically prove that a slowdown is caused by heavy traffic volume rather than a stalled vehicle or accident?")
+        st.success("**The Action:**\nWe will poll the Google Environment API to extract localized indexes[].aqi metrics and hourly emissions projections alongside our traffic speeds.")
+        st.warning("**The Analysis:**\nBy tracking sudden roadside pollution spikes concurrently with dropping travel speeds, we will test the hypothesis that hyper-localized AQI serves as an effective proxy for vehicular volume. This allows us to spot heavy, bumper-to-bumper idling and distinguish it from low-volume structural delays without requiring expensive physical road cameras.")
+        st.info("**Expected Outputs:**\nTraffic volume proxy charts and true congestion verification matrix.")
+        st.write("---")
+        st.info("💡 Data layer execution configuration pending final spatial shapefile overlay mapping.")
 
 if __name__ == "__main__":
     main()
