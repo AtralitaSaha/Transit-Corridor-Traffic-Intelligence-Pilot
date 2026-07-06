@@ -628,66 +628,66 @@ def main():
         st.info("**Expected Outputs:**\nSegment reliability rankings, travel-time uncertainty maps, and identification of high-risk commuter corridors.")
         st.write("---")
         #st.info("💡 Data layer execution configuration pending final spatial shapefile overlay mapping.")
-    if 'current_travel_time_seconds' not in df_fetched.columns:
-        df_fetched['current_travel_time_seconds'] = df_fetched['travel_time_index_tti'] * 300.0
-
-# Mathematical Statistical Assembly
-    df_predict = df_fetched.groupby(['shapefile_segment_name', 'corridor_name']).agg(
-        mean_time=('current_travel_time_seconds', 'mean'),
-        p95_time=('current_travel_time_seconds', lambda x: x.quantile(0.95)),
-        std_time=('current_travel_time_seconds', 'std'),
-        bti_val=('travel_time_index_tti', lambda x: ((x.quantile(0.95) - x.mean()) / x.mean()) * 100.0)
-    ).reset_index()
+        if 'current_travel_time_seconds' not in df_fetched.columns:
+            df_fetched['current_travel_time_seconds'] = df_fetched['travel_time_index_tti'] * 300.0
     
-    st.write("### [1] Fleet Transit Network Predictability Registry")
-    st.dataframe(df_predict.sort_values(by='bti_val', ascending=False), use_container_width=True)
-    
-    # Graph 1: Buffer Time Index Volatility Allocation
-    st.write("### [2] Network Buffer Time Index Performance Scale")
-    fig_p1, ax_p1 = plt.subplots(figsize=(10, 4.5))
-    sns.barplot(
-        data=df_predict.sort_values(by='bti_val', ascending=False).head(15),
-        x='bti_val',
-        y='shapefile_segment_name',
-        palette='Reds_r',
-        ax=ax_p1
-    )
-    ax_p1.axvline(x=80.0, color='darkred', linestyle=':', linewidth=2)
-    ax_p1.set_xlabel("Buffer Time Index (BTI %)")
-    ax_p1.set_ylabel("Shapefile Segment Node Name")
-    st.pyplot(fig_p1)
-    
-    st.markdown("""
-    > **Formula Implemented:**
-    > $$\text{BTI} = \left( \frac{\mathcal{T}_{95\%} - \mu_{\mathcal{T}}}{\mu_{\mathcal{T}}} \right) \times 100$$
-    > **What this Graph Means:** Ranks the 15 least predictable transit links based on total required buffer time margins.
-    > **Analytical Insight:** Any segment extending past the 80% critical benchmark represents severe unreliability, indicating frequent incidents, breakdowns, or friction that disrupts standard schedules.
-    """)
-    
-    # Graph 2: Volatility Coefficient Distributions
-    st.write("### [3] Deviation Dispersion Mismatch Tracking")
-    fig_p2, ax_p2 = plt.subplots(figsize=(10, 4))
-    sns.scatterplot(
-        data=df_predict,
-        x='mean_time',
-        y='std_time',
-        size='bti_val',
-        sizes=(20, 200),
-        color='#7f7f7f',
-        alpha=0.8,
-        ax=ax_p2
-    )
-    ax_p2.set_xlabel("Mean Absolute Baseline Travel Duration (Seconds)")
-    ax_p2.set_ylabel("Standard Deviation of Travel Duration ($\sigma$)")
-    ax_p2.grid(True, linestyle=':', alpha=0.5)
-    st.pyplot(fig_p2)
-    
-    st.markdown("""
-    > **Formula Implemented:**
-    > $$\sigma = \sqrt{\frac{1}{N-1}\sum_{i=1}^N (\mathcal{T}_i - \mu_{\mathcal{T}})^2}$$
-    > **What this Graph Means:** Plots standard deviation against mean trip durations to show absolute variability across segments.
-    > **Analytical Insight:** Linear deviation divergence patterns mean congestion increases proportionally with distance, while random vertical spikes flag structural congestion hotspots prone to highly unpredictable disruptions.
-    """)
+    # Mathematical Statistical Assembly
+        df_predict = df_fetched.groupby(['shapefile_segment_name', 'corridor_name']).agg(
+            mean_time=('current_travel_time_seconds', 'mean'),
+            p95_time=('current_travel_time_seconds', lambda x: x.quantile(0.95)),
+            std_time=('current_travel_time_seconds', 'std'),
+            bti_val=('travel_time_index_tti', lambda x: ((x.quantile(0.95) - x.mean()) / x.mean()) * 100.0)
+        ).reset_index()
+        
+        st.write("### [1] Fleet Transit Network Predictability Registry")
+        st.dataframe(df_predict.sort_values(by='bti_val', ascending=False), use_container_width=True)
+        
+        # Graph 1: Buffer Time Index Volatility Allocation
+        st.write("### [2] Network Buffer Time Index Performance Scale")
+        fig_p1, ax_p1 = plt.subplots(figsize=(10, 4.5))
+        sns.barplot(
+            data=df_predict.sort_values(by='bti_val', ascending=False).head(15),
+            x='bti_val',
+            y='shapefile_segment_name',
+            palette='Reds_r',
+            ax=ax_p1
+        )
+        ax_p1.axvline(x=80.0, color='darkred', linestyle=':', linewidth=2)
+        ax_p1.set_xlabel("Buffer Time Index (BTI %)")
+        ax_p1.set_ylabel("Shapefile Segment Node Name")
+        st.pyplot(fig_p1)
+        
+        st.markdown("""
+        > **Formula Implemented:**
+        > $$\text{BTI} = \left( \frac{\mathcal{T}_{95\%} - \mu_{\mathcal{T}}}{\mu_{\mathcal{T}}} \right) \times 100$$
+        > **What this Graph Means:** Ranks the 15 least predictable transit links based on total required buffer time margins.
+        > **Analytical Insight:** Any segment extending past the 80% critical benchmark represents severe unreliability, indicating frequent incidents, breakdowns, or friction that disrupts standard schedules.
+        """)
+        
+        # Graph 2: Volatility Coefficient Distributions
+        st.write("### [3] Deviation Dispersion Mismatch Tracking")
+        fig_p2, ax_p2 = plt.subplots(figsize=(10, 4))
+        sns.scatterplot(
+            data=df_predict,
+            x='mean_time',
+            y='std_time',
+            size='bti_val',
+            sizes=(20, 200),
+            color='#7f7f7f',
+            alpha=0.8,
+            ax=ax_p2
+        )
+        ax_p2.set_xlabel("Mean Absolute Baseline Travel Duration (Seconds)")
+        ax_p2.set_ylabel("Standard Deviation of Travel Duration ($\sigma$)")
+        ax_p2.grid(True, linestyle=':', alpha=0.5)
+        st.pyplot(fig_p2)
+        
+        st.markdown("""
+        > **Formula Implemented:**
+        > $$\sigma = \sqrt{\frac{1}{N-1}\sum_{i=1}^N (\mathcal{T}_i - \mu_{\mathcal{T}})^2}$$
+        > **What this Graph Means:** Plots standard deviation against mean trip durations to show absolute variability across segments.
+        > **Analytical Insight:** Linear deviation divergence patterns mean congestion increases proportionally with distance, while random vertical spikes flag structural congestion hotspots prone to highly unpredictable disruptions.
+        """)
 
     # =============================================================================
     # MODULE TAB 7: HYPOTHESIS 7 - FLYOVER EXIT & UPHILL GRADIENTS
