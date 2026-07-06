@@ -562,59 +562,59 @@ def main():
         st.info("**Expected Outputs:**\nDirectional congestion heatmaps, hourly asymmetry profiles, and tidal-flow commuter corridor identification.")
         st.write("---")
         #st.info("💡 Data layer execution configuration pending final spatial shapefile overlay mapping.")  
-        
         # Data Fallback Direction Engine
-        if 'direction_track' not in df_fetched.columns:
-            df_fetched['direction_track'] = np.where(df_fetched['shapefile_segment_name'].str.contains('001|003|005|018'), 'Northbound', 'Southbound')
+    
+    if 'direction_track' not in df_fetched.columns:
+        df_fetched['direction_track'] = np.where(df_fetched['shapefile_segment_name'].str.contains('001|003|005|018'), 'Northbound', 'Southbound')
         
         # Hourly Direction Profile Engine
-        tidal_profile = df_fetched.groupby(['corridor_name', 'direction_track', 'derived_hour'])['travel_time_index_tti'].mean().unstack(level=1).reset_index()
+    tidal_profile = df_fetched.groupby(['corridor_name', 'direction_track', 'derived_hour'])['travel_time_index_tti'].mean().unstack(level=1).reset_index()
         
-        if 'Northbound' in tidal_profile.columns and 'Southbound' in tidal_profile.columns:
-            tidal_profile['asymmetry_coefficient'] = tidal_profile['Northbound'] / tidal_profile['Southbound']
+    if 'Northbound' in tidal_profile.columns and 'Southbound' in tidal_profile.columns:
+        tidal_profile['asymmetry_coefficient'] = tidal_profile['Northbound'] / tidal_profile['Southbound']
             
-            st.write("### [1] Systemic Corridor Directional Asymmetry Registry")
-            st.dataframe(tidal_profile, use_container_width=True)
+        st.write("### [1] Systemic Corridor Directional Asymmetry Registry")
+        st.dataframe(tidal_profile, use_container_width=True)
         
             # Graph 1: Asymmetry Diurnal Variance
-            st.write("### [2] Diurnal Tidal Flow Divergence Profile")
-            fig_t1, ax_t1 = plt.subplots(figsize=(10, 4.5))
-            for corr in tidal_profile['corridor_name'].unique():
-                corr_sub = tidal_profile[tidal_profile['corridor_name'] == corr].sort_values(by='derived_hour')
-                ax_t1.plot(corr_sub['derived_hour'], corr_sub['asymmetry_coefficient'], label=corr, marker='o')
-            ax_t1.axhline(y=1.0, color='gray', linestyle='--', alpha=0.7)
-            ax_t1.set_xlabel("Hour of Day (24-Hour Cycle)")
-            ax_t1.set_ylabel("Directional Asymmetry Ratio (NB / SB)")
-            ax_t1.set_xticks(range(0, 24))
-            ax_t1.legend(loc='upper right')
-            ax_t1.grid(True, linestyle=':', alpha=0.5)
-            st.pyplot(fig_t1)
+        st.write("### [2] Diurnal Tidal Flow Divergence Profile")
+        fig_t1, ax_t1 = plt.subplots(figsize=(10, 4.5))
+        for corr in tidal_profile['corridor_name'].unique():
+            corr_sub = tidal_profile[tidal_profile['corridor_name'] == corr].sort_values(by='derived_hour')
+            ax_t1.plot(corr_sub['derived_hour'], corr_sub['asymmetry_coefficient'], label=corr, marker='o')
+        ax_t1.axhline(y=1.0, color='gray', linestyle='--', alpha=0.7)
+        ax_t1.set_xlabel("Hour of Day (24-Hour Cycle)")
+        ax_t1.set_ylabel("Directional Asymmetry Ratio (NB / SB)")
+        ax_t1.set_xticks(range(0, 24))
+        ax_t1.legend(loc='upper right')
+        ax_t1.grid(True, linestyle=':', alpha=0.5)
+        st.pyplot(fig_t1)
         
-            st.markdown("""
-            > **Formula Implemented:**
-            > $$\Lambda_{\text{tidal}} = \frac{\mu_{\text{TTI}}(\text{Direction A}, \text{Hour})}{\mu_{\text{TTI}}(\text{Direction B}, \text{Hour})}$$
-            > **What this Graph Means:** This visualization plots the hourly split metric. Values diverging from the 1.0 baseline line represent localized structural traffic imbalances.
-            > **Analytical Insight:** Mirroring peak deviations (spikes exceeding 1.5 in morning and plunging below 0.6 in evening) identify clean tidal corridors, unlocking optimal areas for automated reversible lane allocation frameworks.
-            """)
+        st.markdown("""
+        > **Formula Implemented:**
+        > $$\Lambda_{\text{tidal}} = \frac{\mu_{\text{TTI}}(\text{Direction A}, \text{Hour})}{\mu_{\text{TTI}}(\text{Direction B}, \text{Hour})}$$
+        > **What this Graph Means:** This visualization plots the hourly split metric. Values diverging from the 1.0 baseline line represent localized structural traffic imbalances.
+        > **Analytical Insight:** Mirroring peak deviations (spikes exceeding 1.5 in morning and plunging below 0.6 in evening) identify clean tidal corridors, unlocking optimal areas for automated reversible lane allocation frameworks.
+        """)
         
             # Graph 2: Dual Corridor Performance Heat Matrix
-            st.write("### [3] Comparative Directional Split Overload Matrix")
-            fig_t2, (ax_th1, ax_th2) = plt.subplots(1, 2, figsize=(14, 5), sharey=True)
-            heat_nb = df_fetched[df_fetched['direction_track'] == 'Northbound'].groupby(['corridor_name', 'derived_hour'])['travel_time_index_tti'].mean().unstack()
-            heat_sb = df_fetched[df_fetched['direction_track'] == 'Southbound'].groupby(['corridor_name', 'derived_hour'])['travel_time_index_tti'].mean().unstack()
+        st.write("### [3] Comparative Directional Split Overload Matrix")
+        fig_t2, (ax_th1, ax_th2) = plt.subplots(1, 2, figsize=(14, 5), sharey=True)
+        heat_nb = df_fetched[df_fetched['direction_track'] == 'Northbound'].groupby(['corridor_name', 'derived_hour'])['travel_time_index_tti'].mean().unstack()
+        heat_sb = df_fetched[df_fetched['direction_track'] == 'Southbound'].groupby(['corridor_name', 'derived_hour'])['travel_time_index_tti'].mean().unstack()
             
-            sns.heatmap(heat_nb, cmap='YlOrRd', ax=ax_th1, cbar_kws={'label': 'NB TTI Score'})
-            ax_th1.set_title("Northbound Fleet Footprint")
-            sns.heatmap(heat_sb, cmap='YlOrRd', ax=ax_th2, cbar_kws={'label': 'SB TTI Score'})
-            ax_th2.set_title("Southbound Fleet Footprint")
-            st.pyplot(fig_t2)
+        sns.heatmap(heat_nb, cmap='YlOrRd', ax=ax_th1, cbar_kws={'label': 'NB TTI Score'})
+        ax_th1.set_title("Northbound Fleet Footprint")
+        sns.heatmap(heat_sb, cmap='YlOrRd', ax=ax_th2, cbar_kws={'label': 'SB TTI Score'})
+        ax_th2.set_title("Southbound Fleet Footprint")
+        st.pyplot(fig_t2)
         
-            st.markdown("""
-            > **Formula Implemented:**
-            > $$\text{Split Profile} = \mathcal{M}_{i,j} = \frac{1}{N}\sum_{k=1}^N \text{TTI}_{k}(Corridor_i, Hour_j)$$
-            > **What this Graph Means:** Side-by-side performance matrices tracing absolute network stress profiles by hours across explicit directions.
-            > **Analytical Insight:** Finding asymmetric high-density patches confirms systemic workforce migration flows, giving engineers clear validation parameters for adaptive signal priority shifts.
-            """)
+        st.markdown("""
+        > **Formula Implemented:**
+        > $$\text{Split Profile} = \mathcal{M}_{i,j} = \frac{1}{N}\sum_{k=1}^N \text{TTI}_{k}(Corridor_i, Hour_j)$$
+        > **What this Graph Means:** Side-by-side performance matrices tracing absolute network stress profiles by hours across explicit directions.
+        > **Analytical Insight:** Finding asymmetric high-density patches confirms systemic workforce migration flows, giving engineers clear validation parameters for adaptive signal priority shifts.
+        """)
 
     # =============================================================================
     # MODULE TAB 6: HYPOTHESIS 6 - COMMUTER UNCERTAINTY
@@ -627,7 +627,67 @@ def main():
         st.success("**The Action:**\nWe will measure the daily variance and standard deviation of travel times on specific segments to generate a 'reliability score.'")
         st.info("**Expected Outputs:**\nSegment reliability rankings, travel-time uncertainty maps, and identification of high-risk commuter corridors.")
         st.write("---")
-        st.info("💡 Data layer execution configuration pending final spatial shapefile overlay mapping.")
+        #st.info("💡 Data layer execution configuration pending final spatial shapefile overlay mapping.")
+    if 'current_travel_time_seconds' not in df_fetched.columns:
+    df_fetched['current_travel_time_seconds'] = df_fetched['travel_time_index_tti'] * 300.0
+
+# Mathematical Statistical Assembly
+    df_predict = df_fetched.groupby(['shapefile_segment_name', 'corridor_name']).agg(
+        mean_time=('current_travel_time_seconds', 'mean'),
+        p95_time=('current_travel_time_seconds', lambda x: x.quantile(0.95)),
+        std_time=('current_travel_time_seconds', 'std'),
+        bti_val=('travel_time_index_tti', lambda x: ((x.quantile(0.95) - x.mean()) / x.mean()) * 100.0)
+    ).reset_index()
+    
+    st.write("### [1] Fleet Transit Network Predictability Registry")
+    st.dataframe(df_predict.sort_values(by='bti_val', ascending=False), use_container_width=True)
+    
+    # Graph 1: Buffer Time Index Volatility Allocation
+    st.write("### [2] Network Buffer Time Index Performance Scale")
+    fig_p1, ax_p1 = plt.subplots(figsize=(10, 4.5))
+    sns.barplot(
+        data=df_predict.sort_values(by='bti_val', ascending=False).head(15),
+        x='bti_val',
+        y='shapefile_segment_name',
+        palette='Reds_r',
+        ax=ax_p1
+    )
+    ax_p1.axvline(x=80.0, color='darkred', linestyle=':', linewidth=2)
+    ax_p1.set_xlabel("Buffer Time Index (BTI %)")
+    ax_p1.set_ylabel("Shapefile Segment Node Name")
+    st.pyplot(fig_p1)
+    
+    st.markdown("""
+    > **Formula Implemented:**
+    > $$\text{BTI} = \left( \frac{\mathcal{T}_{95\%} - \mu_{\mathcal{T}}}{\mu_{\mathcal{T}}} \right) \times 100$$
+    > **What this Graph Means:** Ranks the 15 least predictable transit links based on total required buffer time margins.
+    > **Analytical Insight:** Any segment extending past the 80% critical benchmark represents severe unreliability, indicating frequent incidents, breakdowns, or friction that disrupts standard schedules.
+    """)
+    
+    # Graph 2: Volatility Coefficient Distributions
+    st.write("### [3] Deviation Dispersion Mismatch Tracking")
+    fig_p2, ax_p2 = plt.subplots(figsize=(10, 4))
+    sns.scatterplot(
+        data=df_predict,
+        x='mean_time',
+        y='std_time',
+        size='bti_val',
+        sizes=(20, 200),
+        color='#7f7f7f',
+        alpha=0.8,
+        ax=ax_p2
+    )
+    ax_p2.set_xlabel("Mean Absolute Baseline Travel Duration (Seconds)")
+    ax_p2.set_ylabel("Standard Deviation of Travel Duration ($\sigma$)")
+    ax_p2.grid(True, linestyle=':', alpha=0.5)
+    st.pyplot(fig_p2)
+    
+    st.markdown("""
+    > **Formula Implemented:**
+    > $$\sigma = \sqrt{\frac{1}{N-1}\sum_{i=1}^N (\mathcal{T}_i - \mu_{\mathcal{T}})^2}$$
+    > **What this Graph Means:** Plots standard deviation against mean trip durations to show absolute variability across segments.
+    > **Analytical Insight:** Linear deviation divergence patterns mean congestion increases proportionally with distance, while random vertical spikes flag structural congestion hotspots prone to highly unpredictable disruptions.
+    """)
 
     # =============================================================================
     # MODULE TAB 7: HYPOTHESIS 7 - FLYOVER EXIT & UPHILL GRADIENTS
