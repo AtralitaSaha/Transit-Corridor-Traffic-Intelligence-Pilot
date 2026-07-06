@@ -556,65 +556,90 @@ def main():
     elif selected_tab == "Hypothesis 5: Tidal Flow Asymmetry":
         st.header("Hypothesis 5: Directional 'Tidal Flow' & Commuter Asymmetry")
         
-        st.subheader("5. Directional 'Tidal Flow' & Commuter Asymmetry")
         st.error("**The Business Question:**\nDoes traffic congestion perfectly mirror itself during morning and evening commutes, or is there a severe directional imbalance that could justify dynamic lane management (e.g., reversible lanes)?")
         st.success("**The Action:**\nWe will separate segments by their exact directional tags and compare their TTI degradation during the morning versus the evening peaks to quantify commuter asymmetry.")
         st.info("**Expected Outputs:**\nDirectional congestion heatmaps, hourly asymmetry profiles, and tidal-flow commuter corridor identification.")
         st.write("---")
-        #st.info("💡 Data layer execution configuration pending final spatial shapefile overlay mapping.")  
-        # Data Fallback Direction Engine
-    
-    if 'direction_track' not in df_fetched.columns:
-        df_fetched['direction_track'] = np.where(df_fetched['shapefile_segment_name'].str.contains('001|003|005|018'), 'Northbound', 'Southbound')
         
-        # Hourly Direction Profile Engine
-    tidal_profile = df_fetched.groupby(['corridor_name', 'direction_track', 'derived_hour'])['travel_time_index_tti'].mean().unstack(level=1).reset_index()
+        # 1. FIXED ENHANCED PARSING ENGINE: Maps variations (NB, SB, N, S, inbound) to full terms
+        if 'direction_track' not in df_fetched.columns:
+            # If the column is completely missing, infer it from the shapefile segment name
+            df_fetched['direction_track'] = np.where(df_fetched['shapefile_segment_name'].str.contains('001|003|005|018'), 'Northbound', 'Southbound')
+        else:
+            # Convert existing entries to standard strings to prevent empty filtering errors
+            df_fetched['direction_track'] = df_fetched['direction_track'].astype(str).str.upper().str.strip()
+            direction_mapping = {
+                'NB': 'Northbound', 'N': 'Northbound', 'NORTH': 'Northbound', 'NORTHBOUND': 'Northbound',
+                'SB': 'Southbound', 'S': 'Southbound', 'SOUTH': 'Southbound', 'SOUTHBOUND': 'Southbound',
+                'INBOUND': 'Northbound', 'OUTBOUND': 'Southbound'
+            }
+            df_fetched['direction_track'] = df_fetched['direction_track'].map(direction_mapping).fillna('Northbound')
         
-    if 'Northbound' in tidal_profile.columns and 'Southbound' in tidal_profile.columns:
-        tidal_profile['asymmetry_coefficient'] = tidal_profile['Northbound'] / tidal_profile['Southbound']
+        # 2. Hourly Direction Profile Computation
+        tidal_profile = df_fetched.groupby(['corridor_name', 'direction_track', 'derived_hour'])['travel_time_index_tti'].mean().unstack(level=1).reset_index()
+        
+        # Check to ensure data exists before rendering components
+        if 'Northbound' in tidal_profile.columns and 'Southbound' in tidal_profile.columns:
+            # Calculate the asymmetry ratio
+            tidal_profile['asymmetry_coefficient'] = tidal_profile['Northbound'] / tidal_profile['Southbound']
             
-        st.write("### [1] Systemic Corridor Directional Asymmetry Registry")
-        st.dataframe(tidal_profile, use_container_width=True)
+            st.write("### [1] Systemic Corridor Directional Asymmetry Registry")
+            st.dataframe(tidal_profile, use_container_width=True)
         
             # Graph 1: Asymmetry Diurnal Variance
-        st.write("### [2] Diurnal Tidal Flow Divergence Profile")
-        fig_t1, ax_t1 = plt.subplots(figsize=(10, 4.5))
-        for corr in tidal_profile['corridor_name'].unique():
-            corr_sub = tidal_profile[tidal_profile['corridor_name'] == corr].sort_values(by='derived_hour')
-            ax_t1.plot(corr_sub['derived_hour'], corr_sub['asymmetry_coefficient'], label=corr, marker='o')
-        ax_t1.axhline(y=1.0, color='gray', linestyle='--', alpha=0.7)
-        ax_t1.set_xlabel("Hour of Day (24-Hour Cycle)")
-        ax_t1.set_ylabel("Directional Asymmetry Ratio (NB / SB)")
-        ax_t1.set_xticks(range(0, 24))
-        ax_t1.legend(loc='upper right')
-        ax_t1.grid(True, linestyle=':', alpha=0.5)
-        st.pyplot(fig_t1)
+            st.write("### [2] Diurnal Tidal Flow Divergence Profile")
+            fig_t1, ax_t1 = plt.subplots(figsize=(10, 4.5))
+            for corr in tidal_profile['corridor_name'].unique():
+                corr_sub = tidal_profile[tidal_profile['corridor_name'] == corr].sort_values(by='derived_hour')
+                ax_t1.plot(corr_sub['derived_hour'], corr_sub['asymmetry_coefficient'], label=corr, marker='o', linewidth=2)
+                
+            ax_t1.axhline(y=1.0, color='blue', linestyle=':', alpha=0.5, label='Perfect Symmetry Baseline')
+            ax_t1.set_xlabel("Hour of Day (24-Hour Cycle)", fontweight='bold')
+            ax_t1.set_ylabel("Directional Asymmetry Ratio (NB / SB)", fontweight='bold')
+            ax_t1.set_xticks(range(0, 24))
+            ax_t1.legend(loc='upper right')
+            ax_t1.grid(True, linestyle=':', alpha=0.5)
+            st.pyplot(fig_t1)
         
-        st.markdown("""
-        > **Formula Implemented:**
-        > $$\Lambda_{\text{tidal}} = \frac{\mu_{\text{TTI}}(\text{Direction A}, \text{Hour})}{\mu_{\text{TTI}}(\text{Direction B}, \text{Hour})}$$
-        > **What this Graph Means:** This visualization plots the hourly split metric. Values diverging from the 1.0 baseline line represent localized structural traffic imbalances.
-        > **Analytical Insight:** Mirroring peak deviations (spikes exceeding 1.5 in morning and plunging below 0.6 in evening) identify clean tidal corridors, unlocking optimal areas for automated reversible lane allocation frameworks.
-        """)
+            st.markdown("""
+            > **Formula Implemented:**
+            > $$\Lambda_{\text{tidal}} = \frac{\mu_{\text{TTI}}(\text{Direction A}, \text{Hour})}{\mu_{\text{TTI}}(\text{Direction B}, \text{Hour})}$$
+            > **What this Graph Means:** This visualization plots the hourly split metric. Values diverging from the 1.0 baseline line represent localized structural traffic imbalances.
+            > **Analytical Insight:** Mirroring peak deviations (spikes exceeding 1.5 in morning and plunging below 0.6 in evening) identify clean tidal corridors, unlocking optimal areas for automated reversible lane allocation frameworks.
+            """)
         
             # Graph 2: Dual Corridor Performance Heat Matrix
-        st.write("### [3] Comparative Directional Split Overload Matrix")
-        fig_t2, (ax_th1, ax_th2) = plt.subplots(1, 2, figsize=(14, 5), sharey=True)
-        heat_nb = df_fetched[df_fetched['direction_track'] == 'Northbound'].groupby(['corridor_name', 'derived_hour'])['travel_time_index_tti'].mean().unstack()
-        heat_sb = df_fetched[df_fetched['direction_track'] == 'Southbound'].groupby(['corridor_name', 'derived_hour'])['travel_time_index_tti'].mean().unstack()
+            st.write("### [3] Comparative Directional Split Overload Matrix")
+            fig_t2, (ax_th1, ax_th2) = plt.subplots(1, 2, figsize=(14, 5), sharey=True)
             
-        sns.heatmap(heat_nb, cmap='YlOrRd', ax=ax_th1, cbar_kws={'label': 'NB TTI Score'})
-        ax_th1.set_title("Northbound Fleet Footprint")
-        sns.heatmap(heat_sb, cmap='YlOrRd', ax=ax_th2, cbar_kws={'label': 'SB TTI Score'})
-        ax_th2.set_title("Southbound Fleet Footprint")
-        st.pyplot(fig_t2)
+            heat_nb = df_fetched[df_fetched['direction_track'] == 'Northbound'].groupby(['corridor_name', 'derived_hour'])['travel_time_index_tti'].mean().unstack().fillna(1.0)
+            heat_sb = df_fetched[df_fetched['direction_track'] == 'Southbound'].groupby(['corridor_name', 'derived_hour'])['travel_time_index_tti'].mean().unstack().fillna(1.0)
+            
+            sns.heatmap(heat_nb, cmap='YlOrRd', ax=ax_th1, cbar_kws={'label': 'NB TTI Score'}, vmin=1.0, vmax=3.0)
+            ax_th1.set_title("Northbound Fleet Footprint (Morning Peak Vector)", fontweight='bold', fontsize=10)
+            ax_th1.set_xlabel("Hour of Day")
+            ax_th1.set_ylabel("Corridor Identity Moniker")
+            
+            sns.heatmap(heat_sb, cmap='YlOrRd', ax=ax_th2, cbar_kws={'label': 'SB TTI Score'}, vmin=1.0, vmax=3.0)
+            ax_th2.set_title("Southbound Fleet Footprint (Evening Peak Vector)", fontweight='bold', fontsize=10)
+            ax_th2.set_xlabel("Hour of Day")
+            ax_th2.set_ylabel("")
+            
+            plt.tight_layout()
+            st.pyplot(fig_t2)
         
-        st.markdown("""
-        > **Formula Implemented:**
-        > $$\text{Split Profile} = \mathcal{M}_{i,j} = \frac{1}{N}\sum_{k=1}^N \text{TTI}_{k}(Corridor_i, Hour_j)$$
-        > **What this Graph Means:** Side-by-side performance matrices tracing absolute network stress profiles by hours across explicit directions.
-        > **Analytical Insight:** Finding asymmetric high-density patches confirms systemic workforce migration flows, giving engineers clear validation parameters for adaptive signal priority shifts.
-        """)
+            st.markdown("""
+            > **Formula Implemented:**
+            > $$\text{Split Profile} = \mathcal{M}_{i,j} = \frac{1}{N}\sum_{k=1}^N \text{TTI}_{k}(Corridor_i, Hour_j)$$
+            > **What this Graph Means:** Side-by-side performance matrices tracing absolute network stress profiles by hours across explicit directions.
+            > **Analytical Insight:** Finding asymmetric high-density patches confirms systemic workforce migration flows, giving engineers clear validation parameters for adaptive signal priority shifts.
+            """)
+        else:
+            st.warning("⚠️ Directional normalization was unable to resolve active columns. Verify that 'direction_track' exists within your uploaded file schema or check its spelling.")
+                
+        
+        
+        
 
     # =============================================================================
     # MODULE TAB 6: HYPOTHESIS 6 - COMMUTER UNCERTAINTY
