@@ -137,26 +137,42 @@ def main():
         st.header("Hypothesis 1: Systemic Bottleneck Localization (True vs. Spillover Traffic)")
 
         # ==============================================================================
-        # 1. CORE BUSINESS FRAMING
+        # 1. BUSINESS FRAMING
         # ==============================================================================
         st.error(
-            "### Business Objective\n\n"
-            "Identify specific micro-segments acting as structural bottleneck catalysts that generate cascading "
-            "spillover queues across transit corridors, allowing engineering teams to separate true root-cause nodes "
-            "from victim links absorbing downstream backup waves."
+            "**Business question:** Which specific micro-segments are true root-cause bottlenecks that generate "
+            "cascading spillover queues across a corridor, and where should engineering interventions be prioritized first?\n\n"
+            "On a dashboard, congestion often looks identical across several adjoining links: speed drops, travel times spike. "
+            "But the underlying cause differs:\n\n"
+            "- **True bottlenecks** are caused by a local structural issue — a lane drop, poor signal timing, a permanent "
+            "physical obstruction (e.g., a bus bay blocking a lane). These require on-site engineering work.\n"
+            "- **Spillover (victim) segments** have no structural defect. They only slow down because a downstream queue "
+            "has backed up into them. Sending a field crew to redesign a victim segment wastes budget; the fix belongs "
+            "further downstream, at the segment actually causing the queue."
         )
-        
+
         st.success(
-            "### Methodology and Evaluation Metrics\n\n"
-            "Travel Time Index (TTI) thresholds are evaluated relative to each individual corridor's 90th percentile distribution "
-            "to account for distinct background capacities. Localized causal relationships are mapped chronologically using directional "
-            "spatial lookbacks. A link interval is classified as a genuine root-cause bottleneck if it experiences capacity failure "
-            "independently of its immediate upstream physical neighbor, and that failure persists into subsequent temporal observation intervals."
+            "**Method:** The engine computes a Travel Time Index (TTI) at a sub-1km segment resolution and compares each "
+            "segment against a threshold set from its own corridor's distribution, rather than a single citywide cutoff — "
+            "so naturally busier trunk roads aren't unfairly flagged.\n\n"
+            "Using segment order (`sequence_order`) and timestamp (`execution_timestamp`), the model checks whether a "
+            "segment enters congestion while its immediate upstream neighbor is still clear, and whether that congestion "
+            "persists into the next interval. A segment meeting both conditions is flagged as a verified root cause rather "
+            "than a segment simply absorbing an existing queue."
+        )
+
+        st.info(
+            "**Outputs produced below:**\n"
+            "1. Corridor-level performance summary\n"
+            "2. Ranked bottleneck priority list (MCBI score)\n"
+            "3. Score decomposition per segment\n"
+            "4. Spatial propagation view — how congestion moves along the corridor\n"
+            "5. Case-study validation charts for corridors with verified root-cause events"
         )
         st.write("---")
 
         # ==============================================================================
-        # 2. DATA PREPROCESSING AND QUALITY AUDIT
+        # 2. DATA CLEANING
         # ==============================================================================
         df_analyzed = df_fetched.copy()
         df_analyzed['execution_timestamp'] = pd.to_datetime(
@@ -164,12 +180,11 @@ def main():
         )
         df_analyzed = df_analyzed.dropna(subset=['execution_timestamp'])
 
-        # Purge duplicate entries that skew sequence indices
         n_before = len(df_analyzed)
         df_analyzed = df_analyzed.sort_values(
             by=['corridor_name', 'execution_timestamp', 'sequence_order']
         ).reset_index(drop=True)
-        
+
         df_analyzed = df_analyzed.drop_duplicates(
             subset=['segment_uid', 'execution_timestamp'], keep='first'
         )
@@ -178,13 +193,12 @@ def main():
 
         if n_removed > 0:
             st.warning(
-                f"### Data Ingestion Quality Alert\n\n"
-                f"Purged {n_removed:,} duplicate (Segment UID + Timestamp) entries "
-                f"({n_removed / n_before * 100:.2f}% of raw ingest). This processing constraint prevents the lookback matrix "
-                f"from interpreting duplicate async-polling entries as false upstream records, securing the integrity of single-segment domains."
+                f"**Data quality check:** Removed {n_removed:,} duplicate (segment + timestamp) records "
+                f"({n_removed / n_before * 100:.2f}% of the raw pool). Duplicates come from overlapping polling cycles. "
+                f"Left in place, they would make the upstream-lookback comparison treat the same segment as two separate "
+                f"neighbors at one instant, producing false root-cause flags."
             )
 
-        # Enforce global standard column presence strings
         if 'hour_of_day' not in df_analyzed.columns:
             df_analyzed['hour_of_day'] = df_analyzed['derived_hour']
         if 'segment_uid' not in df_analyzed.columns:
@@ -193,7 +207,47 @@ def main():
             df_analyzed['is_weekend'] = 0
 
         # ==============================================================================
-        # 3. SPATIOTEMPORAL PROPAGATION ALGORITHMIC CORE
+        # 3. METHODOLOGY (concise reference, not a full derivation)
+        # ==============================================================================
+        with st.expander("Methodology and scoring formula", expanded=False):
+            st.markdown(
+                """
+    **1. Corridor-relative threshold** — congestion is defined against each corridor's own distribution, not a fixed
+    citywide number:
+
+    $$\\text{Threshold}_{\\text{corridor}} = P_{90}(\\text{TTI}_{\\text{corridor}})$$
+    $$\\text{is\\_congested} = \\text{TTI}_{t} > \\text{Threshold}_{\\text{corridor}}$$
+
+    **2. Upstream / downstream comparison** — for every timestamp, compare a segment to its spatial neighbor and to
+    itself one interval later:
+
+    $$\\text{upstream\\_is\\_congested} = \\text{shift}_{\\text{spatial}}(\\text{is\\_congested}, 1)$$
+    $$\\text{next\\_interval\\_congested} = \\text{shift}_{\\text{temporal}}(\\text{is\\_congested}, -1)$$
+
+    **3. Root-cause classification** — a record is a verified root-cause event only if all three hold:
+
+    $$\\text{root\\_cause\\_event} = \\text{is\\_congested} \\;\\land\\; \\lnot\\text{upstream\\_is\\_congested} \\;\\land\\; \\text{next\\_interval\\_congested}$$
+
+    i.e. the segment is congested, its upstream neighbor is not (ruling out spillover), and the congestion persists
+    (ruling out a one-off blip).
+
+    **4. Onset hour** — for each date, the earliest peak-window hour (7-10, 17-20) at which a segment is congested is
+    recorded; the average across the observation window is `mean_onset_hour`. A lower value means the segment breaks
+    down earlier than typical commuter demand growth would explain — a sign of a structural capacity limit.
+
+    **5. Composite score (MCBI)** — four MinMax-normalized components are combined:
+
+    $$\\text{MCBI} = 0.25\\,I_{P90\\,TTI} + 0.20\\,I_{\\%\\,congested} + 0.25\\,(1-I_{\\text{onset}}) + 0.30\\,I_{\\text{root cause}}$$
+
+    For corridors with only one monitored segment, the root-cause term cannot be computed (there is no upstream
+    neighbor to compare against). Rather than defaulting that term to zero — which would artificially lower the
+    segment's score — its weight is dropped and the remaining three are rescaled to sum to 1.0. Such segments are
+    labeled "untestable," not "clear."
+                """
+            )
+
+        # ==============================================================================
+        # 4. CORE COMPUTATION
         # ==============================================================================
         corridor_bounds = df_analyzed.groupby('corridor_name')['travel_time_index_tti'].transform(lambda x: x.quantile(0.90))
         df_analyzed['congestion_threshold'] = corridor_bounds
@@ -238,13 +292,13 @@ def main():
             total_intervals=('is_congested', 'count'),
             total_congested_intervals=('is_congested', 'sum'),
             root_cause_events=('root_cause_event', lambda x: x.sum() if x.notna().any() else np.nan),
+            mean_sequence_order=('sequence_order', 'mean'),
         ).reset_index()
 
         metrics = pd.merge(metrics, avg_onset, on='segment_uid', how='left')
         metrics['mean_onset_hour'] = metrics['mean_onset_hour'].fillna(24.0)
         metrics['pct_time_congested'] = (metrics['total_congested_intervals'] / metrics['total_intervals']) * 100
 
-        # Index Scaling Operations (MinMax normalization vectors)
         def _minmax(series: pd.Series) -> pd.Series:
             if series.max() == series.min():
                 return series * 0.0
@@ -263,7 +317,6 @@ def main():
             if metrics.loc[has_root_cause_data, 'root_cause_events'].nunique() == 1:
                 metrics.loc[has_root_cause_data, 'n_root_cause'] = 1.0
 
-        # Multi-Criteria Index Weight Allocation Matrix
         W_P90, W_PCT, W_ONSET, W_RC = 0.25, 0.20, 0.25, 0.30
         mcbi_scores = []
         for _, row in metrics.iterrows():
@@ -271,12 +324,12 @@ def main():
             if pd.notna(row['n_root_cause']):
                 score = base + (row['n_root_cause'] * W_RC)
             else:
-                score = base / (W_P90 + W_PCT + W_ONSET) # Redistribution rule for single-link segments
+                score = base / (W_P90 + W_PCT + W_ONSET)
             mcbi_scores.append(score)
         metrics['mcbi_score'] = mcbi_scores
 
         metrics['root_cause_display'] = metrics['root_cause_events'].apply(
-            lambda v: "N/A (Single Link)" if pd.isna(v) else f"{int(v)} Events"
+            lambda v: "Untestable" if pd.isna(v) else f"{int(v)} events"
         )
 
         top_priority_metrics = metrics.sort_values(by='mcbi_score', ascending=False).reset_index(drop=True)
@@ -284,130 +337,255 @@ def main():
         top_5_segments = top_priority_metrics.head(5)
 
         # ==============================================================================
-        # 4. TECHNICAL DATA DISPLAY SLICES
+        # 5. TABLES
         # ==============================================================================
-        st.write("### [1] Micro-Segment Operational Priority Rank Ledger")
+        st.write("### 1. Corridor Performance Summary")
+        corridor_rankings = df_analyzed.groupby('corridor_name').agg(
+            mean_tti=('travel_time_index_tti', 'mean'),
+            max_tti=('travel_time_index_tti', 'max'),
+            segments_monitored=('segment_uid', 'nunique'),
+            congested_intervals=('is_congested', 'sum'),
+        ).sort_values(by='mean_tti', ascending=False).reset_index()
+        st.dataframe(corridor_rankings.style.format({'mean_tti': '{:.3f}', 'max_tti': '{:.2f}'}), use_container_width=True)
+        st.caption(
+            "Corridors with `segments_monitored = 1` have no adjacent sensor to compare against, so spillover from an "
+            "upstream link cannot be ruled in or out for them."
+        )
+
+        st.write("### 2. Priority Bottleneck List (ranked by MCBI score)")
         display_cols = [
             'priority_rank', 'shapefile_segment_name', 'corridor_name', 'p90_tti',
             'pct_time_congested', 'mean_onset_hour', 'root_cause_display', 'mcbi_score'
         ]
         st.dataframe(
-            top_priority_metrics[display_cols].rename(columns={
-                'priority_rank': 'Rank', 'shapefile_segment_name': 'Segment Name',
-                'corridor_name': 'Corridor', 'p90_tti': 'P90 TTI',
-                'pct_time_congested': 'Congestion Duration (%)', 'mean_onset_hour': 'Mean Failure Onset Hour',
-                'root_cause_display': 'Causal Breakdowns Isolated', 'mcbi_score': 'Composite MCBI Score'
-            }).style.format({'P90 TTI': '{:.2f}', 'Congestion Duration (%)': '{:.2f}%', 'Mean Failure Onset Hour': '{:.1f}:00', 'Composite MCBI Score': '{:.4f}'}),
+            top_5_segments[display_cols].rename(columns={
+                'priority_rank': 'Rank', 'shapefile_segment_name': 'Segment', 'corridor_name': 'Corridor',
+                'p90_tti': 'P90 TTI', 'pct_time_congested': 'Congestion density (%)',
+                'mean_onset_hour': 'Avg onset time', 'root_cause_display': 'Root-cause diagnostic',
+                'mcbi_score': 'MCBI score'
+            }).style.format({'P90 TTI': '{:.2f}', 'Congestion density (%)': '{:.2f}%', 'Avg onset time': '{:.1f}:00', 'MCBI score': '{:.4f}'}),
             use_container_width=True
         )
         st.caption(
-            "Table Interpretive Footnote: The Composite MCBI Score synthesizes geometric impact and temporal severity into a normalized index. "
-            "Links marked N/A identify segments lacking an instrumented upstream neighbor, highlighting targets for camera layout expansion."
+            "Segments marked \"Untestable\" are high-priority by severity but sit on single-segment corridors — expanding "
+            "sensor coverage around them would confirm whether they are a true cause or an unverified spillover victim."
         )
 
         # ==============================================================================
-        # 5. RELEVANT VISUAL DIAGNOSTIC DASHBOARD (Decomposition + Classification Space)
+        # 6. CHART 1 — MCBI SCORE DECOMPOSITION
         # ==============================================================================
-        st.write("### [2] Infrastructure Priority Diagnostics Suite")
-        
-        col_plot1, col_plot2 = st.columns(2)
-        
-        with col_plot1:
-            # Visual Panel A: Attribute Breakdown Bar
-            decomp = top_5_segments.copy()
-            decomp['contrib_p90'] = decomp['n_p90'] * W_P90
-            decomp['contrib_pct'] = decomp['n_pct_congested'] * W_PCT
-            decomp['contrib_onset'] = decomp['n_onset'] * W_ONSET
-            decomp['contrib_rc'] = decomp['n_root_cause'].fillna(0) * W_RC
-            
-            no_rc_mask = decomp['n_root_cause'].isna()
-            rescale = 1.0 / (W_P90 + W_PCT + W_ONSET)
-            decomp.loc[no_rc_mask, ['contrib_p90', 'contrib_pct', 'contrib_onset']] *= rescale
+        st.write("### 3. MCBI Score Decomposition")
+        decomp = top_priority_metrics.copy()
+        decomp['contrib_p90'] = decomp['n_p90'] * W_P90
+        decomp['contrib_pct'] = decomp['n_pct_congested'] * W_PCT
+        decomp['contrib_onset'] = decomp['n_onset'] * W_ONSET
+        decomp['contrib_rc'] = decomp['n_root_cause'].fillna(0) * W_RC
 
-            fig_d1, ax_d1 = plt.subplots(figsize=(10, 6.0))
-            labels = [name.split('_')[0] for name in decomp['shapefile_segment_name']]
-            bottom = np.zeros(len(decomp))
-            components = [
-                ('contrib_p90', 'Tail Severity (P90 TTI)', '#e67e22'),
-                ('contrib_pct', 'Congestion Density (%)', '#f1c40f'),
-                ('contrib_onset', 'Early Diurnal Breakdown Onset', '#2980b9'),
-                ('contrib_rc', 'Upstream Causal Event Attribution', '#c0392b'),
-            ]
-            for col, label, color in components:
-                ax_d1.bar(labels, decomp[col], bottom=bottom, label=label, color=color, edgecolor='white', linewidth=0.5)
-                bottom += decomp[col].values
-                
-            ax_d1.set_ylabel("Priority Weight Weights (MCBI Scale)", fontweight='bold', fontsize=9)
-            ax_d1.set_title("Top 5 Asset Priority Drivers Comparison", fontsize=11, fontweight='bold', pad=10)
-            ax_d1.set_ylim(0, 1.05)
-            ax_d1.grid(axis='y', linestyle=':', alpha=0.4)
-            ax_d1.legend(loc='upper right', fontsize=8.5, frameon=True, facecolor='white')
-            plt.xticks(fontsize=8, rotation=10)
-            st.pyplot(fig_d1)
-            st.caption(
-                "Graph Footnote: Breaks down the mathematical variables driving the top 5 highest-risk links. "
-                "A high contribution from the dark red block highlights confirmed local structural breakdown originating independently of upstream congestion waves."
-            )
+        no_rc_mask = decomp['n_root_cause'].isna()
+        rescale = 1.0 / (W_P90 + W_PCT + W_ONSET)
+        decomp.loc[no_rc_mask, ['contrib_p90', 'contrib_pct', 'contrib_onset']] *= rescale
 
-        with col_plot2:
-            # Visual Panel B: Causal Classification Quadrant Map (Replaces Heatmap)
-            fig_d2, ax_d2 = plt.subplots(figsize=(10, 6.0))
-            metrics_plot = metrics.copy().fillna({'root_cause_events': 0})
-            
-            # Segment Categorization Rules for Plot Mapping
-            metrics_plot['category'] = np.where(
-                metrics_plot['root_cause_events'] > 0, 'Verified Origin Bottleneck',
-                np.where(metrics_plot['p90_tti'] > 1.4, 'High Volume Victim Link', 'Optimal Performance Link')
-            )
-            
-            sns.scatterplot(
-                data=metrics_plot,
-                x='p90_tti',
-                y='root_cause_events',
-                hue='category',
-                style='category',
-                palette={'Verified Origin Bottleneck': '#c0392b', 'High Volume Victim Link': '#d35400', 'Optimal Performance Link': '#27ae60'},
-                s=160,
-                edgecolor='black',
-                linewidth=0.8,
-                ax=ax_d2
-            )
-            
-            ax_d2.set_xlabel("Absolute Peak Stress Metric (P90 Travel Time Index)", fontweight='bold', fontsize=9)
-            ax_d2.set_ylabel("Isolated Root Cause Events Count (Total Count)", fontweight='bold', fontsize=9)
-            ax_d2.set_title("Network Anomaly Causal Classification Matrix", fontsize=11, fontweight='bold', pad=10)
-            ax_d2.grid(True, linestyle=':', alpha=0.4)
-            ax_d2.legend(loc='upper right', fontsize=8.5, frameon=True, facecolor='white')
-            st.pyplot(fig_d2)
-            st.caption(
-                "Graph Footnote: Segments in the dark red category possess design limitations causing independent network failures. "
-                "Segments in orange have severe peak delays but zero causal breakdowns, confirming they are victims absorbing downstream spillovers."
-            )
+        fig1, ax1 = plt.subplots(figsize=(12, 5.0))
+        labels = decomp['shapefile_segment_name']
+        bottom = np.zeros(len(decomp))
+        components = [
+            ('contrib_p90', 'Tail severity (P90 TTI)', '#e67e22'),
+            ('contrib_pct', 'Congestion frequency', '#f1c40f'),
+            ('contrib_onset', 'Early onset', '#2980b9'),
+            ('contrib_rc', 'Verified root cause', '#c0392b'),
+        ]
+        for col, label, color in components:
+            ax1.bar(labels, decomp[col], bottom=bottom, label=label, color=color, edgecolor='white', linewidth=0.5)
+            bottom += decomp[col].values
+
+        ax1.set_ylabel("Weighted contribution to MCBI score", fontweight='bold', fontsize=9)
+        ax1.set_xlabel("Segment", fontweight='bold', fontsize=9)
+        ax1.set_title("What is driving each segment's priority score", fontsize=11, fontweight='bold', pad=12)
+        ax1.set_ylim(0, 1.05)
+        ax1.grid(axis='y', linestyle=':', alpha=0.4)
+        ax1.legend(loc='upper right', fontsize=8.5, frameon=True, facecolor='white', edgecolor='none')
+        plt.xticks(rotation=15, ha='right', fontsize=8)
+        plt.yticks(fontsize=8)
+        st.pyplot(fig1)
+        st.caption(
+            "A segment dominated by the dark-red block has a verified, independent breakdown. Segments dominated by the "
+            "orange, yellow, and blue components are severely congested but not yet confirmed as the originating cause."
+        )
 
         # ==============================================================================
-        # 6. SCANNABLE INFRASTRUCTURE DIAGNOSIS AND EXECUTIVE SUMMARY
+        # 7. CHART 2 — SPATIAL PROPAGATION ANALYSIS (replaces the hour-of-day heatmap)
+        # ==============================================================================
+        st.write("### 4. Spatial Propagation Analysis")
+        st.caption(
+            "For each multi-segment corridor, segments are placed in their physical order along the road. Bars show how "
+            "often each segment is congested; the line shows how early it breaks down. A bottleneck typically shows a "
+            "spike in both congestion frequency and early onset at one point, with downstream neighbors following later "
+            "and less severely — the signature of a queue spreading backward from a single origin."
+        )
+
+        multi_corridors = metrics.loc[metrics['multi_segment_corridor'], 'corridor_name'].unique()
+
+        if len(multi_corridors) > 0:
+            for corr in multi_corridors:
+                corr_metrics = metrics[metrics['corridor_name'] == corr].sort_values('mean_sequence_order').reset_index(drop=True)
+                if len(corr_metrics) < 2:
+                    continue
+
+                fig2, ax_bar = plt.subplots(figsize=(11, 4.5))
+                x_pos = np.arange(len(corr_metrics))
+                bar_colors = ['#c0392b' if rc > 0 else '#7f8c8d' for rc in corr_metrics['root_cause_events'].fillna(0)]
+
+                ax_bar.bar(x_pos, corr_metrics['pct_time_congested'], color=bar_colors, edgecolor='white', width=0.55, zorder=2)
+                ax_bar.set_xticks(x_pos)
+                ax_bar.set_xticklabels(corr_metrics['shapefile_segment_name'], rotation=15, ha='right', fontsize=8)
+                ax_bar.set_ylabel("Congestion density (%)", fontweight='bold', fontsize=9)
+                ax_bar.set_xlabel("Segment, ordered by physical position along the corridor", fontsize=9, fontweight='bold')
+                ax_bar.grid(axis='y', linestyle=':', alpha=0.4, zorder=0)
+
+                ax_line = ax_bar.twinx()
+                ax_line.plot(x_pos, corr_metrics['mean_onset_hour'], color='#2c3e50', marker='o', markersize=6,
+                             linewidth=1.8, zorder=3, label='Avg onset hour')
+                ax_line.set_ylabel("Average onset hour", fontsize=9, fontweight='bold')
+                ax_line.invert_yaxis()
+
+                from matplotlib.patches import Patch
+                from matplotlib.lines import Line2D
+                legend_items = [
+                    Patch(facecolor='#c0392b', label='Verified root cause'),
+                    Patch(facecolor='#7f8c8d', label='No confirmed root cause'),
+                    Line2D([0], [0], color='#2c3e50', marker='o', label='Avg onset hour (lower = earlier)'),
+                ]
+                ax_bar.legend(handles=legend_items, loc='upper right', fontsize=8, frameon=True, facecolor='white')
+
+                ax_bar.set_title(f"Propagation profile: {corr}", fontsize=11, fontweight='bold', pad=10)
+                plt.tight_layout()
+                st.pyplot(fig2)
+        else:
+            st.write("No corridor in the current dataset has more than one monitored segment, so a spatial propagation view cannot be built yet.")
+
+        # ==============================================================================
+        # 8. CHART 3 — TOP SEGMENT PROFILES (weekday vs weekend)
+        # ==============================================================================
+        st.write("### 5. Top Priority Segment Profiles")
+        mean_failure_line = corridor_bounds.mean()
+        n_top = len(top_5_segments)
+        fig3 = plt.figure(figsize=(22, 4.0 * max(n_top, 1)))
+        gs = fig3.add_gridspec(max(n_top, 1), 1, hspace=0.6)
+
+        for rank, (_, row) in enumerate(top_5_segments.iterrows()):
+            ax_trend = fig3.add_subplot(gs[rank, 0])
+            curr_uid = row['segment_uid']
+            seg_name = row['shapefile_segment_name']
+            c_name = row['corridor_name']
+            seg_data = df_analyzed[df_analyzed['segment_uid'] == curr_uid]
+
+            weekday_profile = seg_data[seg_data['is_weekend'] == 0].groupby('hour_of_day')['travel_time_index_tti'].mean()
+            weekend_profile = seg_data[seg_data['is_weekend'] == 1].groupby('hour_of_day')['travel_time_index_tti'].mean()
+
+            ax_trend.plot(weekday_profile.index, weekday_profile.values, color='#1f77b4', marker='o', markersize=4,
+                          linewidth=1.8, label='Weekday')
+            if not weekend_profile.empty:
+                ax_trend.plot(weekend_profile.index, weekend_profile.values, color='#ff7f0e', marker='s', markersize=4,
+                              linestyle='--', linewidth=1.5, label='Weekend')
+
+            ax_trend.axhline(y=mean_failure_line, color='crimson', linestyle=':', linewidth=1.5,
+                             label=f'Network congestion threshold ({mean_failure_line:.2f})')
+            ax_trend.set_title(f"Rank {rank + 1}: {seg_name} ({c_name})", fontsize=9.5, fontweight='bold', pad=8)
+            ax_trend.set_xlabel("Hour of day", fontsize=8)
+            ax_trend.set_ylabel("TTI", fontsize=8)
+            ax_trend.set_xlim(0, 23)
+            ax_trend.set_xticks(range(0, 24, 2))
+            ax_trend.grid(True, linestyle=':', alpha=0.5)
+            ax_trend.legend(loc='upper left', fontsize=8, frameon=True, facecolor='white')
+            ax_trend.tick_params(axis='both', labelsize=8)
+
+        plt.tight_layout()
+        st.pyplot(fig3)
+        st.caption(
+            "A profile that stays above the red threshold line for an extended stretch, on both weekdays and weekends, "
+            "points to a structural constraint rather than ordinary peak-hour demand."
+        )
+
+        # ==============================================================================
+        # 9. CHART 4 — EMPIRICAL CASE STUDY
+        # ==============================================================================
+        if len(multi_corridors) > 0:
+            st.write("### 6. Empirical Verification: Root-Cause Events")
+            for corr in multi_corridors:
+                case_df = df_analyzed[df_analyzed['corridor_name'] == corr]
+                fig4, ax4 = plt.subplots(figsize=(12, 5.0))
+
+                for seg_uid, seg_sub in case_df.groupby('segment_uid'):
+                    seg_label = seg_sub['shapefile_segment_name'].iloc[0]
+                    hourly = seg_sub.groupby('hour_of_day')['travel_time_index_tti'].mean()
+                    ax4.plot(hourly.index, hourly.values, marker='o', markersize=4, linewidth=1.5, alpha=0.7, label=seg_label)
+
+                    rc_events = seg_sub[seg_sub['root_cause_event'] == True]
+                    if len(rc_events) > 0:
+                        rc_hourly = rc_events.groupby('hour_of_day')['travel_time_index_tti'].mean()
+                        ax4.scatter(
+                            rc_hourly.index, rc_hourly.values,
+                            color='#2c3e50', zorder=6, s=120, marker='X', edgecolors='white', linewidths=1.0,
+                            label=f"Verified breakdown ({seg_label})"
+                        )
+
+                ax4.set_title(f"Corridor: {corr}", fontsize=11, fontweight='bold', pad=12)
+                ax4.set_xlabel("Hour of day", fontweight='bold', fontsize=9)
+                ax4.set_ylabel("Mean TTI", fontweight='bold', fontsize=9)
+                ax4.set_xlim(0, 23)
+                ax4.set_xticks(range(0, 24, 2))
+                ax4.grid(True, linestyle=':', alpha=0.4)
+                ax4.legend(loc='upper right', fontsize=8.5, frameon=True, facecolor='white')
+                plt.xticks(fontsize=8)
+                plt.yticks(fontsize=8)
+                st.pyplot(fig4)
+
+                n_rc_total = int(case_df['root_cause_event'].sum(skipna=True))
+                st.caption(
+                    f"The marked points show intervals where this link broke down while its immediate upstream neighbor "
+                    f"stayed clear ({n_rc_total} verified instances over the observation window) — evidence the delay "
+                    f"originates here rather than being absorbed from downstream."
+                )
+
+        # ==============================================================================
+        # 10. EXECUTIVE SUMMARY
         # ==============================================================================
         st.write("---")
-        st.subheader("Systemic Bottleneck Localization Summary")
+        st.subheader("Executive Summary")
 
         top_row = top_priority_metrics.iloc[0]
         rc_segments = metrics[metrics['root_cause_events'].fillna(0) > 0].sort_values('root_cause_events', ascending=False)
 
-        summary_markdown = f"""
-**Primary Network Constraint Mapping:** Link **{top_row['shapefile_segment_name']}** (Corridor Domain: **{top_row['corridor_name']}**) is classified as the network asset requiring highest operational priority, exhibiting a severe P90 TTI peak profile of **{top_row['p90_tti']:.2f}** and collapsing into failure state during **{top_row['pct_time_congested']:.2f}%** of tracked intervals.
+        answer_text = f"""
+    **Top priority: {top_row['shapefile_segment_name']}** (Corridor: {top_row['corridor_name']})
 
-**Causal Structure Isolation Validation:** """
+    This segment ranks first based on three signals:
+    1. **Severity** — P90 TTI of {top_row['p90_tti']:.2f}, meaning travel times during congestion more than double free-flow conditions.
+    2. **Persistence** — congested in {top_row['pct_time_congested']:.2f}% of all observed intervals, consistent with a recurring design issue rather than a one-off incident.
+    3. **Early onset** — breaks down by an average of {top_row['mean_onset_hour']:.1f}:00, earlier than typical commuter volume growth would explain.
+
+    **Recommended action:** send a field team to review lane geometry, turning-lane storage, and signal phase timing at this location.
+    """
+        st.markdown(answer_text)
+
         if len(rc_segments) > 0:
             rc_top = rc_segments.iloc[0]
-            summary_markdown += f"Link **{rc_top['shapefile_segment_name']}** on the **{rc_top['corridor_name']}** network is explicitly verified as a true root-cause breakdown origin point, logging **{int(rc_top['root_cause_events'])} instances** where local capacity collapsed independently of its upstream inputs."
-        else:
-            summary_markdown += "No links under current multi-segment layout profiles exhibited independent failure initialization trends over this timeline."
+            rc_text = f"""
+    ---
+    **Confirmed root cause:** {rc_top['shapefile_segment_name']} on the {rc_top['corridor_name']} corridor shows
+    {int(rc_top['root_cause_events'])} verified instances of congestion developing independently of its upstream neighbor
+    and persisting into the next interval. This is the clearest evidence of a structural bottleneck driving downstream
+    spillover on this corridor.
+    """
+            st.markdown(rc_text)
 
-        summary_markdown += f"""
-
-**Actionable Routing Inference:** Mapped telemetry shows that **{int((~metrics['multi_segment_corridor']).sum())} links** operate within single-link spatial boundaries where comparative upstream mapping is untestable. Standard link averages tend to overlook severe bottlenecks on these segments. Expanding CUMTA sensor distribution coordinates immediately adjacent to these high-MCBI links is recommended to establish causal confirmation prior to major construction funding allocation.
-"""
-        st.markdown(summary_markdown)
+        scope_summary = f"""
+    ---
+    **Sensor coverage note:** {int((~metrics['multi_segment_corridor']).sum())} of {len(metrics)} monitored segments sit
+    on single-segment corridors and cannot currently be tested for upstream causality. High-ranking segments in this
+    group are good candidates for additional sensor placement before committing capital works.
+    """
+        st.markdown(scope_summary)
 
     # =============================================================================
     # MODULE TAB 2: HYPOTHESIS 2 - TEMPORAL PEAK PROFILING
