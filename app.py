@@ -130,7 +130,7 @@ def main():
     elif selected_tab == "Hypothesis 1: Systemic Bottleneck Localization":
         st.header("Hypothesis 1: Systemic Bottleneck Localization (True vs. Spillover Traffic)")
         
-        st.subheader("Executive Framework: Hypothesis 1 Specifications")
+        st.subheader("1. Systemic Bottleneck Localization (True vs. Spillover Traffic) - (Atralita)")
         st.error("**The Business Question:**\nWhich specific micro-segments act as 'root cause' bottlenecks that create cascading spillover queues across the corridor, and where should engineers focus their attention first?")
         st.success("**The Action:**\nBy calculating the Travel Time Index (TTI) at a sub-1-kilometer resolution, we will mathematically separate high-TTI 'root cause' nodes from 'victim' segments that simply absorb the spillover traffic.")
         st.info("**Expected Outputs:**\nCorridor congestion rankings, segment-level hotspot maps, and a list of the top priority bottlenecks.")
@@ -260,17 +260,10 @@ def main():
     elif selected_tab == "Hypothesis 2: Temporal Peak Profiling":
         st.header("Hypothesis 2: Temporal Peak Profiling & Network Failure Rates")
         
-        st.subheader("Executive Framework: Hypothesis 2 Specifications")
+        st.subheader("2. Temporal Peak Profiling & Network Failure Rates - (Atralita)")
         st.error("**The Business Question:**\nAt what precise minute does a road’s capacity fail, how long does it take for the traffic to clear out, and how does this cycle shift on weekends?")
         st.success("**The Action:**\nWe will track TTI at 15-minute intervals to plot the exact exponential degradation and recovery curves of the transit network.")
         st.info("**Expected Outputs:**\nHourly congestion profiles, peak-hour identification tables, and weekday vs. weekend comparison dashboards.")
-        st.write("---")
-        
-        st.markdown("### 🔬 Notebook Analytical Engine Infrastructure Summary")
-        st.markdown("""
-        * **Variable Mapping Logic:** Tracks 15-minute operational clock cycles (*time_of_day*) against dynamic corridor-level 90th percentile bounds to isolate temporal infrastructure breakdowns.
-        * **Recovery Analysis Loop:** Evaluates clear-out thresholds dynamically. Capacity remains in a failed state as long as more than 25% of micro-links exceed their localized limit parameters.
-        """)
         st.write("---")
 
         if 'execution_timestamp' in df_fetched.columns:
@@ -379,17 +372,10 @@ def main():
     elif selected_tab == "Hypothesis 4: Weather-Driven Variance":
         st.header("Hypothesis 4: Measuring Weather-Driven Environmental Variance")
         
-        st.subheader("Executive Framework: Hypothesis 4 Specifications")
-        st.error("The Business Question:\nExactly how much does rain degrade our transit network capacity compared to a normal dry day, and can we mathematically isolate these events?")
-        st.success("The Action:\nBy mapping localized rainfall intensity and visibility limits directly over our descriptive traffic speed data, we will test the hypothesis that certain severe traffic spikes are purely weather anomalies.")
-        st.info("Expected Outputs:\nRain-sensitivity slope calculations and weather-delay isolation metrics.")
-        st.write("---")
-        
-        st.markdown("### 🔬 Notebook Analytical Engine Infrastructure Summary")
-        st.markdown("""
-        * **Variable Mapping Logic:** Links climate vectors (*rainfall_intensity_mm_hr* and *visibility_meters*) to identify drop-offs in network performance.
-        * **Statistical Profile:** Measures capacity reductions during heavy monsoon anomalies ($\ge 16.0\text{ mm/hr}$), mapping a clear degradation bracket from **$45.1\%$ to $74.2\%$** relative to dry baselines.
-        """)
+        st.subheader("4. Measuring Weather-Driven Environmental Variance - (Atralita)")
+        st.error("**The Business Question:**\nExactly how much does rain degrade our transit network capacity compared to a normal dry day, and can we mathematically isolate these events?")
+        st.success("**The Action:**\nBy mapping localized rainfall intensity and visibility limits directly over our descriptive traffic speed data, we will test the hypothesis that certain severe traffic spikes are purely weather anomalies.")
+        st.info("**Expected Outputs:**\nRain-sensitivity slope calculations and weather-delay isolation metrics.")
         st.write("---")
         
         if 'rainfall_intensity_mm_hr' not in df_fetched.columns:
@@ -487,7 +473,7 @@ def main():
     elif selected_tab == "Hypothesis 7: The Flyover Exit & Gradients":
         st.header("Hypothesis 7: The 'Flyover Exit' & Uphill Gradient Penalties")
         
-        st.subheader("Executive Framework: Hypothesis 7 Specifications")
+        st.subheader("7. The 'Flyover Exit' & Uphill Gradient Penalties (Layered Networks) - (Atralita)")
         st.error("**The Business Question 1:** Do steep inclines permanently slow down heavy fleets?")
         st.markdown("> **Business Answer:** Yes. Uphill grades introduce an invariant physical crawl penalty that baseline operations cannot fix. Data traces confirm that micro-segments with steep climbs (>6% incline) suffer a structural TTI inflation of 0.42 to 0.45 across all operational hours. Heavy commercial fleets and buses suffer massive power-to-weight ratio loss on these ascents, dropping to crawl speeds and generating a permanent upstream queue wave.\n\n> **Real-Life Intervention:** Implement a mandatory 'Crawler Lane' policy for heavy vehicles and adjust upstream pavement markings to prevent passenger cars from becoming trapped behind low-velocity truck fleets.")
         
@@ -497,13 +483,6 @@ def main():
         st.success("**The Action:** We will filter segments by their 3D topographical gradient and network_layer_type to map specific baseline speed drops on inclines and structural queuing at flyover merges.")
         st.info("**Expected Outputs:** Topographical delay profiles and flyover-exit bottleneck maps.")
         st.write("---")
-        
-        st.markdown("### 🔬 Notebook Analytical Engine Infrastructure Summary")
-        st.markdown("""
-        * **Variable Mapping Logic:** Applies substring wildcard execution mappings (`ramp`, `flyover`, `incline`) to categorize segments into layered 3D layouts safely with zero missing value entries.
-        * **TOPOGRAPHICAL DELAY MATRIX:** Compiles mean travel time indexes alongside conditional peak allocations to track terminal discharge queues.
-        """)
-        st.write("---")
 
         df_fetched['shapefile_segment_name_lower'] = df_fetched['shapefile_segment_name'].astype(str).str.lower()
         
@@ -511,16 +490,16 @@ def main():
         df_fetched['elevation_gradient'] = 0.2
         
         ramp_mask = df_fetched['shapefile_segment_name_lower'].str.contains('ramp|atgrade|puzhal.*002|002')
-        df_fetched.loc[ramp_mask, 'network_layer_type'] = 'At-Grade Off-Ramp Junction'
-        df_fetched.loc[ramp_mask, 'elevation_gradient'] = -3.5
+        df_fetched['network_layer_type'] = np.where(ramp_mask, 'At-Grade Off-Ramp Junction', df_fetched['network_layer_type'])
+        df_fetched['elevation_gradient'] = np.where(ramp_mask, -3.5, df_fetched['elevation_gradient'])
         
         flyover_mask = df_fetched['shapefile_segment_name_lower'].str.contains('flyover|elevated|omr|005') & ~ramp_mask
-        df_fetched.loc[flyover_mask, 'network_layer_type'] = 'Elevated Flyover Mainline'
-        df_fetched.loc[flyover_mask, 'elevation_gradient'] = 0.0
+        df_fetched['network_layer_type'] = np.where(flyover_mask, 'Elevated Flyover Mainline', df_fetched['network_layer_type'])
+        df_fetched['elevation_gradient'] = np.where(flyover_mask, 0.0, df_fetched['elevation_gradient'])
         
         incline_mask = df_fetched['shapefile_segment_name_lower'].str.contains('incline|uphill|kilambakkam|littlemount|018')
-        df_fetched.loc[incline_mask, 'network_layer_type'] = 'Steep Incline Link'
-        df_fetched.loc[incline_mask, 'elevation_gradient'] = 6.2
+        df_fetched['network_layer_type'] = np.where(incline_mask, 'Steep Incline Link', df_fetched['network_layer_type'])
+        df_fetched['elevation_gradient'] = np.where(incline_mask, 6.2, df_fetched['elevation_gradient'])
 
         df_fetched['travel_time_index_tti'] += np.where(df_fetched['network_layer_type'] == 'Steep Incline Link', 0.45, 0.0)
         
@@ -608,7 +587,7 @@ def main():
         st.pyplot(fig_g2)
 
     # =============================================================================
-    # MODULE TAB 5: HYPOTHESIS 8 - SPATIAL LENGTH DILUTION BIAS (INTEGRATED)
+    # MODULE TAB 5: HYPOTHESIS 8 - SPATIAL LENGTH DILUTION BIAS
     # =============================================================================
     elif selected_tab == "Hypothesis 8: Spatial Length Dilution Bias":
         st.header("Hypothesis 8: Spatial Slicing Accuracy & 'Length Dilution'")
@@ -621,20 +600,10 @@ def main():
         st.info("**Expected Outputs:** Data accuracy validation comparing sub-1km segments against standard corridor routing.")
         st.write("---")
         
-        st.markdown("### 🔬 Notebook Analytical Engine Infrastructure Summary")
-        st.markdown("""
-        * **Variable Mapping Logic:** Groups absolute segment length values (*true_driving_distance_meters*) derived via geometric shapefile boundaries against localized peak *travel_time_index_tti* outputs.
-        * **Logarithmic Regression Line:** Fits an engine model ($\text{TTI}_{\text{max}} = \beta_0 \cdot \ln(\text{Distance}) + \beta_1$) directly alongside Kernel Density Estimation plots to demonstrate information entropy decay.
-        """)
-        st.write("---")
-        
         if 'true_driving_distance_meters' not in df_fetched.columns:
-            print("Warning: Spatial distance telemetry missing. Injecting true shapefile segment lengths...")
             distance_map = {
-                'PUZHAL_CENTRAL_ATGRADE_002': 450.0,
-                'CENTRAL_PUZHAL_021': 850.0,
-                'OMR_THIRUVANMIYUR_005': 600.0,
-                'KILAMBAKKAM_LITTLEMOUNT_018': 2400.0,
+                'PUZHAL_CENTRAL_ATGRADE_002': 450.0, 'CENTRAL_PUZHAL_021': 850.0,           
+                'OMR_THIRUVANMIYUR_005': 600.0, 'KILAMBAKKAM_LITTLEMOUNT_018': 2400.0, 
                 'TAMBARAM_GUINDY_025': 4800.0
             }
             df_fetched['true_driving_distance_meters'] = df_fetched['shapefile_segment_name'].map(distance_map).fillna(1200.0)
@@ -680,7 +649,6 @@ def main():
         fig_h8, (ax_s1, ax_s2) = plt.subplots(1, 2, figsize=(16, 5))
         plt.subplots_adjust(wspace=0.25)
         
-        # Panel A: Scatter Regression Plane
         slice_colors = {'Micro-Segment (<1km)': '#d62728', 'Macro-Corridor (>=1km)': '#1f77b4'}
         for slice_type, group in spatial_metrics.groupby('spatial_slice_type'):
             ax_s1.scatter(
@@ -706,7 +674,6 @@ def main():
         ax_s1.grid(True, linestyle=':', alpha=0.5)
         ax_s1.legend(loc='upper right', fontsize=8.5)
         
-        # Panel B: KDE Probability Distribution
         sns.kdeplot(
             data=spatial_metrics, x='max_peak_tti', hue='spatial_slice_type', 
             palette={'Micro-Segment (<1km)': '#d62728', 'Macro-Corridor (>=1km)': '#1f77b4'},
