@@ -21,6 +21,29 @@ st.markdown("""
     div.stButton > button:first-child {
         background-color: #1f77b4; color: white; border-radius: 6px; font-weight: bold;
     }
+    /* Force all headings to be dark with !important to override Streamlit's opacity/muted text */
+    .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4, 
+    .stMarkdown h5, .stMarkdown h6,
+    .st-emotion-cache-1v0mbdj h1, .st-emotion-cache-1v0mbdj h2, .st-emotion-cache-1v0mbdj h3,
+    .st-emotion-cache-1v0mbdj h4, .st-emotion-cache-1v0mbdj h5, .st-emotion-cache-1v0mbdj h6,
+    .element-container h1, .element-container h2, .element-container h3, .element-container h4,
+    div[data-testid="stMarkdown"] h1, div[data-testid="stMarkdown"] h2, 
+    div[data-testid="stMarkdown"] h3, div[data-testid="stMarkdown"] h4,
+    h1, h2, h3, h4, h5, h6 {
+        color: #0f172a !important;
+        font-weight: 700 !important;
+        opacity: 1 !important;
+    }
+    .st-emotion-cache-1v0mbdj {
+        color: #0f172a !important;
+    }
+    /* Ensure error/success/info boxes have readable text */
+    .stAlert {
+        color: #0f172a !important;
+    }
+    .stAlert p, .stAlert li, .stAlert div {
+        color: #0f172a !important;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -157,7 +180,7 @@ def main():
             .h1-kpi-value {
                 font-size: 26px;
                 font-weight: 700;
-                color: #1a1a2e;
+                color: #0f172a;
                 line-height: 1.15;
             }
             .h1-kpi-sub {
@@ -166,11 +189,12 @@ def main():
                 margin-top: 4px;
             }
             .h1-section-title {
-                font-size: 22px;
-                font-weight: 700;
-                color: #1a1a2e !important;
-                margin-top: 8px;
-                margin-bottom: 4px;
+                font-size: 22px !important;
+                font-weight: 700 !important;
+                color: #0f172a !important;
+                margin-top: 8px !important;
+                margin-bottom: 4px !important;
+                opacity: 1 !important;
             }
             .h1-section-sub {
                 font-size: 14px;
@@ -183,26 +207,54 @@ def main():
                 padding: 14px 18px;
                 border-radius: 6px;
                 font-size: 14.5px;
-                color: #1a1a2e;
+                color: #0f172a;
                 margin-bottom: 14px;
             }
             .h1-callout b, .h1-callout strong {
-                color: #1a1a2e !important;
+                color: #0f172a !important;
             }
-            /* Force dark headings */
+            /* Force dark headings with !important to override Streamlit's opacity/muted text */
+            .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4,
+            .st-emotion-cache-1v0mbdj h1, .st-emotion-cache-1v0mbdj h2, .st-emotion-cache-1v0mbdj h3,
+            .st-emotion-cache-1v0mbdj h4, .st-emotion-cache-1v0mbdj h5, .st-emotion-cache-1v0mbdj h6,
+            .st-emotion-cache-1v0mbdj .stMarkdown h1, .st-emotion-cache-1v0mbdj .stMarkdown h2,
+            div.stMarkdown h1, div.stMarkdown h2, div.stMarkdown h3, div.stMarkdown h4,
+            .element-container .stMarkdown h1, .element-container .stMarkdown h2,
+            .element-container .stMarkdown h3, .element-container .stMarkdown h4,
+            div[data-testid="stMarkdown"] h1, div[data-testid="stMarkdown"] h2,
+            div[data-testid="stMarkdown"] h3, div[data-testid="stMarkdown"] h4,
+            .st-emotion-cache-1v0mbdj .st-emotion-cache-1v0mbdj h1,
+            .st-emotion-cache-1v0mbdj .st-emotion-cache-1v0mbdj h2,
+            .st-emotion-cache-1v0mbdj .st-emotion-cache-1v0mbdj h3,
+            .st-emotion-cache-1v0mbdj .st-emotion-cache-1v0mbdj h4 {
+                color: #0f172a !important;
+                font-weight: 700 !important;
+                opacity: 1 !important;
+            }
+            .st-emotion-cache-1v0mbdj {
+                color: #0f172a !important;
+            }
+            /* Make sure error/success/info boxes have readable text */
+            .stAlert {
+                color: #0f172a !important;
+            }
+            .stAlert p, .stAlert li, .stAlert div {
+                color: #0f172a !important;
+            }
+            /* Override any opacity filters that Streamlit applies */
+            .stMarkdown {
+                opacity: 1 !important;
+            }
             .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4 {
-                color: #1a1a2e !important;
-            }
-            h1, h2, h3, h4, h5, h6 {
-                color: #1a1a2e !important;
+                opacity: 1 !important;
             }
             </style>
         """, unsafe_allow_html=True)
 
-        # Use HTML for main heading to ensure dark color
+        # Use HTML for main heading to ensure dark color with explicit styling
         st.markdown(
-            '<div style="font-size:28px; font-weight:800; color:#1a1a2e; margin-bottom:2px;">'
-            'Hypothesis 1 · Systemic Bottleneck Localization</div>'
+            '<h1 style="font-size:28px; font-weight:800; color:#0f172a; margin-bottom:2px; opacity:1 !important;">'
+            'Hypothesis 1 · Systemic Bottleneck Localization</h1>'
             '<div style="font-size:15px; color:#4a5568; margin-bottom:14px;">'
             'True root-cause bottlenecks vs. spillover / victim traffic, ranked for engineering triage</div>',
             unsafe_allow_html=True
@@ -245,9 +297,12 @@ def main():
             return ax
 
         # ==============================================================================
-        # 1. BUSINESS QUESTION - Using HTML for dark headings
+        # 1. BUSINESS QUESTION - Using HTML for dark headings with explicit styling
         # ==============================================================================
-        st.markdown('<div class="h1-section-title">Business Question</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<h2 style="font-size:22px; font-weight:700; color:#0f172a; margin-top:8px; margin-bottom:4px; opacity:1 !important;">Business Question</h2>',
+            unsafe_allow_html=True
+        )
         st.markdown(
             "**Which specific segments are true root-cause bottlenecks that generate cascading spillover queues "
             "across a corridor, and where should engineering crews be sent first?**\n\n"
@@ -260,7 +315,10 @@ def main():
             "belongs at the segment actually causing the queue."
         )
 
-        st.markdown('<div class="h1-section-title">Methodology</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<h2 style="font-size:22px; font-weight:700; color:#0f172a; margin-top:8px; margin-bottom:4px; opacity:1 !important;">Methodology</h2>',
+            unsafe_allow_html=True
+        )
         st.markdown(
             "Travel Time Index (TTI) is computed at sub-1km segment resolution and compared against a threshold set "
             "from each corridor's own distribution, not a single citywide cutoff, so naturally busier trunk roads "
@@ -496,9 +554,12 @@ def main():
         # ==============================================================================
         # 5. SEGMENT-LEVEL RANKING — direct answer to the business question
         # ==============================================================================
-        st.markdown('<div class="h1-section-title">Segment-Level Ranking</div>', unsafe_allow_html=True)
         st.markdown(
-            '<div class="h1-section-sub">Every monitored segment, ranked by the composite priority score (MCBI)</div>',
+            '<h2 style="font-size:22px; font-weight:700; color:#0f172a; margin-top:8px; margin-bottom:4px; opacity:1 !important;">Segment-Level Ranking</h2>',
+            unsafe_allow_html=True
+        )
+        st.markdown(
+            '<div style="font-size:14px; color:#4a5568; margin-bottom:12px;">Every monitored segment, ranked by the composite priority score (MCBI)</div>',
             unsafe_allow_html=True
         )
 
@@ -533,14 +594,17 @@ def main():
             'Avg onset time': '{:.1f}:00', 'MCBI score': '{:.4f}'
         }).set_properties(**{'font-size': '13px'}) \
          .set_table_styles([
-             {'selector': 'th', 'props': [('background-color', '#1a1a2e'), ('color', 'white'),
+             {'selector': 'th', 'props': [('background-color', '#0f172a'), ('color', 'white'),
                                            ('font-weight', '600'), ('font-size', '12.5px'),
                                            ('text-transform', 'uppercase'), ('letter-spacing', '0.02em')]}
          ])
         st.dataframe(styled_df, use_container_width=True)
 
         st.write("---")
-        st.markdown('<div class="h1-section-title">Corridor-Level Summary</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<h2 style="font-size:22px; font-weight:700; color:#0f172a; margin-top:8px; margin-bottom:4px; opacity:1 !important;">Corridor-Level Summary</h2>',
+            unsafe_allow_html=True
+        )
         corridor_rankings = df_analyzed.groupby('corridor_name').agg(
             mean_tti=('travel_time_index_tti', 'mean'),
             max_tti=('travel_time_index_tti', 'max'),
@@ -551,7 +615,7 @@ def main():
             {'mean_tti': '{:.3f}', 'max_tti': '{:.2f}'}
         ).background_gradient(subset=['mean_tti'], cmap='Reds') \
          .set_table_styles([
-             {'selector': 'th', 'props': [('background-color', '#1a1a2e'), ('color', 'white'),
+             {'selector': 'th', 'props': [('background-color', '#0f172a'), ('color', 'white'),
                                            ('font-weight', '600'), ('font-size', '12.5px'),
                                            ('text-transform', 'uppercase')]}
          ])
@@ -565,9 +629,12 @@ def main():
         # 6. MCBI SCORE DECOMPOSITION
         # ==============================================================================
         st.write("---")
-        st.markdown('<div class="h1-section-title">MCBI Score Decomposition — Top 5 Segments</div>', unsafe_allow_html=True)
         st.markdown(
-            '<div class="h1-section-sub">What is driving each segment onto the priority list</div>',
+            '<h2 style="font-size:22px; font-weight:700; color:#0f172a; margin-top:8px; margin-bottom:4px; opacity:1 !important;">MCBI Score Decomposition — Top 5 Segments</h2>',
+            unsafe_allow_html=True
+        )
+        st.markdown(
+            '<div style="font-size:14px; color:#4a5568; margin-bottom:12px;">What is driving each segment onto the priority list</div>',
             unsafe_allow_html=True
         )
         decomp = top_priority_metrics.copy()
@@ -594,9 +661,9 @@ def main():
             ax1.bar(labels, decomp_top5[col], bottom=bottom, label=label, color=color, edgecolor='white', linewidth=0.6)
             bottom += decomp_top5[col].values
 
-        ax1.set_ylabel("Weighted contribution to MCBI score", fontweight='bold', fontsize=9, color='#1a1a2e')
-        ax1.set_xlabel("Segment", fontweight='bold', fontsize=9, color='#1a1a2e')
-        ax1.set_title("What is driving each segment's priority score", fontsize=11, fontweight='bold', pad=12, color='#1a1a2e')
+        ax1.set_ylabel("Weighted contribution to MCBI score", fontweight='bold', fontsize=9, color='#0f172a')
+        ax1.set_xlabel("Segment", fontweight='bold', fontsize=9, color='#0f172a')
+        ax1.set_title("What is driving each segment's priority score", fontsize=11, fontweight='bold', pad=12, color='#0f172a')
         ax1.set_ylim(0, 1.05)
         ax1.grid(axis='y', linestyle=':', alpha=0.4)
         ax1.legend(loc='upper right', fontsize=8.5, frameon=True, facecolor='white', edgecolor='none')
@@ -611,7 +678,10 @@ def main():
         # 7. SPATIAL PROPAGATION ANALYSIS — colored by status
         # ==============================================================================
         st.write("---")
-        st.markdown('<div class="h1-section-title">Spatial Propagation Analysis</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<h2 style="font-size:22px; font-weight:700; color:#0f172a; margin-top:8px; margin-bottom:4px; opacity:1 !important;">Spatial Propagation Analysis</h2>',
+            unsafe_allow_html=True
+        )
         st.caption(
             "Segments are placed in physical order along the corridor. Bar height is congestion frequency; the label "
             "above each bar is the average breakdown hour. Bar color shows status: red = confirmed root cause, "
@@ -639,9 +709,9 @@ def main():
                 ax.set_xticks(x_pos)
                 ax.set_xticklabels(corr_metrics['segment_id'].str.replace(f"{corr} - ", "", regex=False),
                                    rotation=15, ha='right', fontsize=8)
-                ax.set_ylabel("Congestion density (%)", fontweight='bold', fontsize=9, color='#1a1a2e')
-                ax.set_xlabel("Segment, ordered by physical position along the corridor", fontsize=9, fontweight='bold', color='#1a1a2e')
-                ax.set_title(f"Propagation profile: {corr}", fontsize=11, fontweight='bold', pad=10, color='#1a1a2e')
+                ax.set_ylabel("Congestion density (%)", fontweight='bold', fontsize=9, color='#0f172a')
+                ax.set_xlabel("Segment, ordered by physical position along the corridor", fontsize=9, fontweight='bold', color='#0f172a')
+                ax.set_title(f"Propagation profile: {corr}", fontsize=11, fontweight='bold', pad=10, color='#0f172a')
                 ax.set_ylim(0, max_height * 1.25 if max_height > 0 else 1)
                 ax.grid(axis='y', linestyle=':', alpha=0.35, zorder=0)
                 _style_axes(ax)
@@ -654,9 +724,12 @@ def main():
         # 8. TOP SEGMENT PROFILES (weekday vs weekend) — enlarged per user request
         # ==============================================================================
         st.write("---")
-        st.markdown('<div class="h1-section-title">Top Priority Segment Profiles</div>', unsafe_allow_html=True)
         st.markdown(
-            '<div class="h1-section-sub">Hourly TTI pattern for the top 5 ranked segments, weekday vs. weekend</div>',
+            '<h2 style="font-size:22px; font-weight:700; color:#0f172a; margin-top:8px; margin-bottom:4px; opacity:1 !important;">Top Priority Segment Profiles</h2>',
+            unsafe_allow_html=True
+        )
+        st.markdown(
+            '<div style="font-size:14px; color:#4a5568; margin-bottom:12px;">Hourly TTI pattern for the top 5 ranked segments, weekday vs. weekend</div>',
             unsafe_allow_html=True
         )
         mean_failure_line = corridor_bounds.mean()
@@ -686,11 +759,11 @@ def main():
             badge_color = STATUS_COLORS[status]
             ax_trend.set_title(
                 f"Rank {rank + 1}: {row['segment_id']}   ·   {status}",
-                fontsize=14, fontweight='bold', pad=12, color='#1a1a2e'
+                fontsize=14, fontweight='bold', pad=12, color='#0f172a'
             )
             ax_trend.title.set_bbox(dict(facecolor='none', edgecolor='none'))
-            ax_trend.set_xlabel("Hour of day", fontsize=11, fontweight='bold', color='#1a1a2e')
-            ax_trend.set_ylabel("TTI", fontsize=11, fontweight='bold', color='#1a1a2e')
+            ax_trend.set_xlabel("Hour of day", fontsize=11, fontweight='bold', color='#0f172a')
+            ax_trend.set_ylabel("TTI", fontsize=11, fontweight='bold', color='#0f172a')
             ax_trend.set_xlim(0, 23)
             ax_trend.set_xticks(range(0, 24, 2))
             ax_trend.grid(True, linestyle=':', alpha=0.5)
@@ -709,7 +782,10 @@ def main():
         # ==============================================================================
         if len(multi_corridors) > 0:
             st.write("---")
-            st.markdown('<div class="h1-section-title">Empirical Verification: Root-Cause Events</div>', unsafe_allow_html=True)
+            st.markdown(
+                '<h2 style="font-size:22px; font-weight:700; color:#0f172a; margin-top:8px; margin-bottom:4px; opacity:1 !important;">Empirical Verification: Root-Cause Events</h2>',
+                unsafe_allow_html=True
+            )
             for corr in multi_corridors:
                 case_df = df_analyzed[df_analyzed['corridor_name'] == corr]
                 corr_metrics_map = metrics[metrics['corridor_name'] == corr].set_index('segment_uid')['classification']
@@ -728,9 +804,9 @@ def main():
                         ax4.scatter(rc_hourly.index, rc_hourly.values, color='#e74c3c', zorder=6, s=130,
                                     marker='X', edgecolors='white', linewidths=1.0, label=f"Verified breakdown ({seg_label})")
 
-                ax4.set_title(f"Corridor: {corr}", fontsize=11, fontweight='bold', pad=12, color='#1a1a2e')
-                ax4.set_xlabel("Hour of day", fontweight='bold', fontsize=9, color='#1a1a2e')
-                ax4.set_ylabel("Mean TTI", fontweight='bold', fontsize=9, color='#1a1a2e')
+                ax4.set_title(f"Corridor: {corr}", fontsize=11, fontweight='bold', pad=12, color='#0f172a')
+                ax4.set_xlabel("Hour of day", fontweight='bold', fontsize=9, color='#0f172a')
+                ax4.set_ylabel("Mean TTI", fontweight='bold', fontsize=9, color='#0f172a')
                 ax4.set_xlim(0, 23)
                 ax4.set_xticks(range(0, 24, 2))
                 ax4.grid(True, linestyle=':', alpha=0.4)
@@ -751,7 +827,10 @@ def main():
         # 10. EXECUTIVE SUMMARY & ENGINEERING NEXT STEPS
         # ==============================================================================
         st.write("---")
-        st.markdown('<div class="h1-section-title">Executive Summary and Next Steps for Engineering Teams</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<h2 style="font-size:22px; font-weight:700; color:#0f172a; margin-top:8px; margin-bottom:4px; opacity:1 !important;">Executive Summary and Next Steps for Engineering Teams</h2>',
+            unsafe_allow_html=True
+        )
 
         badge_color = STATUS_COLORS[top_row['classification']]
         st.markdown(
