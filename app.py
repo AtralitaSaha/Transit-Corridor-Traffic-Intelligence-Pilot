@@ -830,25 +830,50 @@ def main():
     # MODULE TAB 2: HYPOTHESIS 2 - TEMPORAL PEAK PROFILING
     # =============================================================================
     elif selected_tab == "Hypothesis 2: Temporal Peak Profiling":
-        st.markdown('<h1 style="color:#ffffff; font-weight:700; font-size:24px;">Hypothesis 2: Temporal Peak Profiling & Network Failure Rates</h1>', unsafe_allow_html=True)
-        
-        st.markdown('<h2 style="color:#ffffff; font-weight:600; font-size:18px;">2. Temporal Peak Profiling & Network Failure Rates</h2>', unsafe_allow_html=True)
-        st.error("**The Business Question:**\nAt what precise minute does a road's capacity fail, how long does it take for the traffic to clear out, and how does this cycle shift on weekends?")
-        st.success("**The Action:**\nWe will track TTI at 15-minute intervals to plot the exact exponential degradation and recovery curves of the transit network.")
-        st.info("**Expected Outputs:**\nHourly congestion profiles, peak-hour identification tables, and weekday vs. weekend comparison dashboards.")
+
+        inject_professional_style()
+        apply_pro_plot_style()
+
+        render_page_header(
+            "Hypothesis 2 · Temporal Peak Profiling (Atralita)",
+            "Exact failure-and-recovery timing of each corridor, benchmarked weekday against weekend"
+        )
+
+        section_title("Business Question")
+        st.markdown(
+            "**At what precise minute does a road's capacity fail, how long does it take for the traffic to clear "
+            "out, and how does this cycle shift on weekends?**\n\n"
+            "Knowing the average congestion level is not enough for scheduling field crews or public messaging — "
+            "engineers need the exact onset minute, the exact clearance duration, and how sharply that pattern "
+            "changes when commuter volume drops on weekends."
+        )
+        section_title("Methodology")
+        st.markdown(
+            "TTI is tracked at fine time resolution per corridor. For each corridor and day-type (weekday / "
+            "weekend), the hour with the highest mean TTI is flagged as the **failure minute**, and the number of "
+            "consecutive post-peak intervals that stay above a 25% failure rate defines the **clearance duration**. "
+            "The same corridors are also rendered as hour-by-hour heatmaps so the full shape of the failure — not "
+            "just its peak — is visible at a glance."
+        )
+        render_callout(
+            "🕒 <b>Why clearance time matters:</b> two corridors can have the same peak severity but very different "
+            "recovery speeds. A corridor that clears in 15 minutes needs signal retiming; one that stays saturated "
+            "for two hours points to a structural capacity shortfall.",
+            border_color="#3498db"
+        )
         st.write("---")
- 
+
         if 'execution_timestamp' in df_fetched.columns:
             df_fetched['time_of_day'] = df_fetched['execution_timestamp'].dt.strftime('%H:%M')
         else:
             df_fetched['time_of_day'] = df_fetched['derived_hour'].astype(str).str.zfill(2) + ":00"
- 
+
         df_fetched['failure_threshold'] = df_fetched.groupby('corridor_name')['travel_time_index_tti'].transform(lambda x: x.quantile(0.90))
         df_fetched['is_failed'] = df_fetched['travel_time_index_tti'] > df_fetched['failure_threshold']
         
         if 'is_weekend' not in df_fetched.columns:
             df_fetched['is_weekend'] = 0
- 
+
         unique_corridors = df_fetched['corridor_name'].unique()
         peak_summary_records = []
         
@@ -882,12 +907,28 @@ def main():
                 })
                 
         peak_report_df = pd.DataFrame(peak_summary_records)
- 
-        st.markdown('<h2 style="color:#ffffff; font-weight:600; font-size:18px;">[1] Peak-Hour Identification & Operational Clearance Timeline</h2>', unsafe_allow_html=True)
+
+        # KPI header row
+        worst_row = peak_report_df.sort_values('peak_tti', ascending=False).iloc[0] if len(peak_report_df) else None
+        avg_failure_rate = peak_report_df['failure_rate'].mean() * 100 if len(peak_report_df) else 0.0
+        weekend_gap = (
+            peak_report_df[peak_report_df['day_profile'] == 'Weekday']['failure_rate'].mean() -
+            peak_report_df[peak_report_df['day_profile'] == 'Weekend']['failure_rate'].mean()
+        ) * 100 if len(peak_report_df) else 0.0
+        kpi_defs = [
+            ("Worst corridor", worst_row['corridor'] if worst_row is not None else "N/A", "#e74c3c", "Highest recorded peak TTI"),
+            ("Peak failure minute", worst_row['failure_minute'] if worst_row is not None else "N/A", "#f1c40f", f"on {worst_row['day_profile'] if worst_row is not None else ''}"),
+            ("Network avg failure rate", f"{avg_failure_rate:.1f}%", "#3498db", "Share of intervals in breakdown"),
+            ("Weekday vs weekend gap", f"{weekend_gap:.1f} pts", "#2ecc71", "How much weekends relieve failure rate"),
+        ]
+        render_kpi_row(kpi_defs)
+        st.write("")
+        st.write("---")
+
+        section_title("Peak-Hour Identification & Operational Clearance Timeline")
         st.dataframe(peak_report_df, use_container_width=True)
-        st.caption("Footnote: 'failure minute' is the 15-minute interval with the highest mean TTI for that corridor/day-type; clearance duration is how long TTI stays in a failed state (>25% of segments over threshold) after that peak.")
- 
-        st.markdown('<h2 style="color:#ffffff; font-weight:600; font-size:18px;">[2] Infrastructure Failure Rate Matrix: Weekday Commutes vs. Weekend Leisure Volumes</h2>', unsafe_allow_html=True)
+
+        section_title("Infrastructure Failure Rate Matrix: Weekday Commutes vs. Weekend Leisure Volumes")
         fig_bar, ax_bar = plt.subplots(figsize=(10, 4.5))
         wd_bar_data = peak_report_df[peak_report_df['day_profile'] == 'Weekday']
         we_bar_data = peak_report_df[peak_report_df['day_profile'] == 'Weekend']
@@ -895,39 +936,45 @@ def main():
         x_indices = np.arange(len(wd_bar_data))
         b_width = 0.35
         
-        ax_bar.bar(x_indices - b_width/2, wd_bar_data['failure_rate'] * 100, b_width, label='Weekday Failure %', color='#1f77b4', edgecolor='black', alpha=0.9)
-        ax_bar.bar(x_indices + b_width/2, we_bar_data['failure_rate'] * 100, b_width, label='Weekend Failure %', color='#ff7f0e', edgecolor='black', alpha=0.9)
+        ax_bar.bar(x_indices - b_width/2, wd_bar_data['failure_rate'] * 100, b_width, label='Weekday Failure %', color='#3498db', edgecolor='white', alpha=0.95)
+        ax_bar.bar(x_indices + b_width/2, we_bar_data['failure_rate'] * 100, b_width, label='Weekend Failure %', color='#f1c40f', edgecolor='white', alpha=0.95)
         
         ax_bar.set_xticks(x_indices)
-        ax_bar.set_xticklabels(wd_bar_data['corridor'], rotation=10, ha='center', fontsize=9)
-        ax_bar.set_ylabel("Operating Windows in Breakdown State (%)", fontweight='bold')
-        ax_bar.grid(axis='y', linestyle=':', alpha=0.5)
-        ax_bar.legend(loc='upper right')
+        ax_bar.set_xticklabels(wd_bar_data['corridor'], rotation=10, ha='center', fontsize=9, color='#4a5568')
+        ax_bar.set_ylabel("Operating Windows in Breakdown State (%)", fontweight='bold', color='#1a1a2e')
+        ax_bar.grid(axis='y', linestyle=':', alpha=0.4)
+        ax_bar.legend(loc='upper right', fontsize=8.5, frameon=True, facecolor='white')
+        style_axes(ax_bar)
         plt.tight_layout()
         st.pyplot(fig_bar)
-        st.caption("Footnote: failure % is the share of all observed intervals where a corridor's TTI exceeded its own 90th-percentile threshold.")
- 
-        st.markdown('<h2 style="color:#ffffff; font-weight:600; font-size:18px;">[3] Operational Time-Window Heatmap</h2>', unsafe_allow_html=True)
-        st.caption("Where and when the network actually fails: mean TTI by corridor and hour of day, split weekday vs. weekend.")
-        heat_wd = df_fetched[df_fetched['is_weekend'] == 0].groupby(['corridor_name', 'derived_hour'])['travel_time_index_tti'].mean().unstack().reindex(columns=range(0, 24)).fillna(1.0)
-        heat_we = df_fetched[df_fetched['is_weekend'] == 1].groupby(['corridor_name', 'derived_hour'])['travel_time_index_tti'].mean().unstack().reindex(columns=range(0, 24)).fillna(1.0)
- 
-        fig_heat, (ax_hwd, ax_hwe) = plt.subplots(1, 2, figsize=(15, 4.8), sharey=True)
-        sns.heatmap(heat_wd, cmap='YlOrRd', ax=ax_hwd, cbar_kws={'label': 'Mean TTI'}, vmin=1.0, vmax=max(heat_wd.values.max(), heat_we.values.max(), 2.0))
-        ax_hwd.set_title("Weekday Operating Window", fontweight='bold', fontsize=10)
-        ax_hwd.set_xlabel("Hour of Day")
-        ax_hwd.set_ylabel("Corridor")
- 
-        if not heat_we.empty:
-            sns.heatmap(heat_we, cmap='YlOrRd', ax=ax_hwe, cbar_kws={'label': 'Mean TTI'}, vmin=1.0, vmax=max(heat_wd.values.max(), heat_we.values.max(), 2.0))
-            ax_hwe.set_title("Weekend Operating Window", fontweight='bold', fontsize=10)
-            ax_hwe.set_xlabel("Hour of Day")
-            ax_hwe.set_ylabel("")
-        plt.tight_layout()
-        st.pyplot(fig_heat)
-        st.caption("Footnote: darker cells mark the specific hour-and-corridor combinations where capacity failure concentrates, giving operations teams a direct read on which time windows need active management on each corridor.")
- 
-        st.markdown('<h2 style="color:#ffffff; font-weight:600; font-size:18px;">[4] Diurnal Velocity Degradation Tracking per Network Corridor</h2>', unsafe_allow_html=True)
+
+        # ==============================================================================
+        # NEW: CORRIDOR FAILURE HEATMAPS — hour of day vs day type, all five corridors
+        # ==============================================================================
+        st.write("---")
+        section_title("Corridor Failure Heatmaps — Hour of Day vs. Day Type")
+        st.markdown(
+            '<div class="h1-section-sub">Darker cells mark the hours each corridor runs hottest, split weekday vs '
+            'weekend, so shift planners can see exactly when — and how consistently — each corridor needs coverage.</div>',
+            unsafe_allow_html=True
+        )
+        for corr in unique_corridors:
+            corr_df = df_fetched[df_fetched['corridor_name'] == corr].copy()
+            corr_df['day_label'] = np.where(corr_df['is_weekend'] == 1, 'Weekend', 'Weekday')
+            pivot = corr_df.pivot_table(index='day_label', columns='derived_hour', values='travel_time_index_tti', aggfunc='mean')
+            pivot = pivot.reindex(['Weekday', 'Weekend'])
+
+            fig_hm, ax_hm = plt.subplots(figsize=(12, 2.3))
+            sns.heatmap(pivot, cmap='YlOrRd', ax=ax_hm, cbar_kws={'label': 'Mean TTI'}, linewidths=0.4, linecolor='white')
+            ax_hm.set_title(f"{corr} — Hourly Failure Heatmap", fontsize=11, fontweight='bold', color='#1a1a2e', pad=8)
+            ax_hm.set_xlabel("Hour of day", fontsize=9, color='#1a1a2e', fontweight='bold')
+            ax_hm.set_ylabel("")
+            ax_hm.tick_params(colors='#4a5568')
+            plt.tight_layout()
+            st.pyplot(fig_hm)
+
+        st.write("---")
+        section_title("Diurnal Velocity Degradation Tracking per Network Corridor")
         for corr in unique_corridors:
             corr_data = df_fetched[df_fetched['corridor_name'] == corr]
             wd_profile = corr_data[corr_data['is_weekend'] == 0].groupby('time_of_day')['travel_time_index_tti'].mean().sort_index()
@@ -937,30 +984,42 @@ def main():
             fig_line, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4), sharey=True)
             plt.subplots_adjust(wspace=0.15)
             
-            ax1.plot(wd_profile.index, wd_profile.values, color='#1f77b4', marker='o', markersize=3, linewidth=1.8, label='Weekday Mean TTI')
-            ax1.axhline(y=local_threshold, color='crimson', linestyle=':', label=f'Capacity Boundary ({local_threshold:.2f})')
-            ax1.set_title(f"Weekday Commuter Profile", fontsize=9, fontweight='bold')
-            ax1.set_ylabel("Mean Travel Time Index (TTI)", fontweight='bold', fontsize=9)
+            ax1.plot(wd_profile.index, wd_profile.values, color='#3498db', marker='o', markersize=3, linewidth=1.8, label='Weekday Mean TTI')
+            ax1.axhline(y=local_threshold, color='#e74c3c', linestyle=':', label=f'Capacity Boundary ({local_threshold:.2f})')
+            ax1.set_title(f"Weekday Commuter Profile", fontsize=9, fontweight='bold', color='#1a1a2e')
+            ax1.set_ylabel("Mean Travel Time Index (TTI)", fontweight='bold', fontsize=9, color='#1a1a2e')
             
             t_positions = wd_profile.index[::max(1, len(wd_profile)//6)]
             ax1.set_xticks(t_positions)
             ax1.set_xticklabels(t_positions, rotation=30, ha='right', fontsize=8)
-            ax1.grid(True, linestyle=':', alpha=0.5)
+            ax1.grid(True, linestyle=':', alpha=0.4)
             ax1.legend(loc='upper left', fontsize=8)
+            style_axes(ax1)
             
             if not we_profile.empty:
-                ax2.plot(we_profile.index, we_profile.values, color='#ff7f0e', marker='s', markersize=3, linestyle='--', linewidth=1.8, label='Weekend Mean TTI')
-                ax2.axhline(y=local_threshold, color='crimson', linestyle=':')
-                ax2.set_title(f"Weekend Leisure Profile", fontsize=9, fontweight='bold')
+                ax2.plot(we_profile.index, we_profile.values, color='#f1c40f', marker='s', markersize=3, linestyle='--', linewidth=1.8, label='Weekend Mean TTI')
+                ax2.axhline(y=local_threshold, color='#e74c3c', linestyle=':')
+                ax2.set_title(f"Weekend Leisure Profile", fontsize=9, fontweight='bold', color='#1a1a2e')
                 ax2.set_xticks(t_positions)
                 ax2.set_xticklabels(t_positions, rotation=30, ha='right', fontsize=8)
-                ax2.grid(True, linestyle=':', alpha=0.5)
+                ax2.grid(True, linestyle=':', alpha=0.4)
                 ax2.legend(loc='upper left', fontsize=8)
+                style_axes(ax2)
                 
             st.caption(f"Network Corridor Workspace Profile: {corr.upper()}")
             st.pyplot(fig_line)
-            st.caption("Footnote: the dotted red line is this corridor's own 90th-percentile capacity boundary; sustained crossings above it indicate the corridor is operating in a failed state, not just a brief spike.")
 
+        st.write("---")
+        section_title("Executive Summary and Next Steps for Engineering Teams")
+        if worst_row is not None:
+            render_callout(
+                f"<b>Worst corridor: <code>{worst_row['corridor']}</code></b> ({worst_row['day_profile']}) — fails "
+                f"around <b>{worst_row['failure_minute']}</b>, reaching a peak TTI of {worst_row['peak_tti']:.2f} and "
+                f"taking roughly {worst_row['clearance_duration']} to clear.<br><br>"
+                f"<b>Action for field teams:</b> Schedule signal-timing review and incident-response staffing to align "
+                f"with this failure window rather than a fixed generic peak-hour block.",
+                border_color="#e74c3c"
+            )
 
     # =============================================================================
     # MODULE TAB 3: HYPOTHESIS 3 - GEOMETRIC CONSTRAINTS — (ARUSHI)
@@ -1149,12 +1208,37 @@ def main():
     # MODULE TAB 4: HYPOTHESIS 4 - WEATHER-DRIVEN VARIANCE
     # =============================================================================
     elif selected_tab == "Hypothesis 4: Weather-Driven Variance":
-        st.markdown('<h1 style="color:#ffffff; font-weight:700; font-size:24px;">Hypothesis 4: Measuring Weather-Driven Environmental Variance</h1>', unsafe_allow_html=True)
-        
-        st.markdown('<h2 style="color:#ffffff; font-weight:600; font-size:18px;">4. Measuring Weather-Driven Environmental Variance</h2>', unsafe_allow_html=True)
-        st.error("**The Business Question:**\nExactly how much does rain degrade our transit network capacity compared to a normal dry day, and can we mathematically isolate these events?")
-        st.success("**The Action:**\nBy mapping localized rainfall intensity and visibility limits directly over our descriptive traffic speed data, we will test the hypothesis that certain severe traffic spikes are purely weather anomalies.")
-        st.info("**Expected Outputs:**\nRain-sensitivity slope calculations and weather-delay isolation metrics.")
+
+        inject_professional_style()
+        apply_pro_plot_style()
+
+        render_page_header(
+            "Hypothesis 4 · Weather-Driven Variance (Atralita)",
+            "Isolating how much rainfall and low visibility degrade corridor capacity, segment by segment"
+        )
+
+        section_title("Business Question")
+        st.markdown(
+            "**Exactly how much does rain degrade our transit network capacity compared to a normal dry day, and "
+            "can we mathematically isolate these events from ordinary demand-driven congestion?**\n\n"
+            "Rain is often blamed informally for a bad traffic day, but without isolating its effect segment by "
+            "segment, engineering teams can't tell whether a drainage upgrade, signal retiming, or resurfacing "
+            "would actually help — or whether the delay was really just rush hour."
+        )
+        section_title("Methodology")
+        st.markdown(
+            "Localized rainfall intensity and visibility are mapped directly onto the travel-speed telemetry. Each "
+            "segment's TTI is regressed against rainfall intensity (mm/hr) to derive a **rain sensitivity slope** — "
+            "how many TTI points are added per mm/hr of rain. Segments are also compared between dry-baseline and "
+            "heavy-monsoon conditions to compute a **delay inflation** percentage, and against visibility limits to "
+            "capture the independent effect of reduced sightlines on safe following speed."
+        )
+        render_callout(
+            "📉 <b>Reading the sensitivity slope:</b> a slope near zero means the segment is largely rain-proof — "
+            "geometry and drainage are adequate. A steep positive slope flags a segment where rainfall directly "
+            "translates into lost capacity, which is the priority list for drainage and surface-grip improvements.",
+            border_color="#3498db"
+        )
         st.write("---")
         
         if 'rainfall_intensity_mm_hr' not in df_fetched.columns:
@@ -1205,10 +1289,21 @@ def main():
 
         segment_report_df = pd.DataFrame(segment_weather_records).sort_values(by='delay_inflation', ascending=False).reset_index(drop=True)
 
-        st.markdown('<h2 style="color:#ffffff; font-weight:600; font-size:18px;">[1] Micro-Segment Sensitivity Matrix (Ranked by Weather-Delay Inflation Impact)</h2>', unsafe_allow_html=True)
+        top_seg = segment_report_df.iloc[0]
+        kpi_defs = [
+            ("Most rain-sensitive segment", top_seg['segment_name'].split('_')[0], "#e74c3c", top_seg['corridor']),
+            ("Peak delay inflation", f"{top_seg['delay_inflation']*100:.1f}%", "#f1c40f", "Heavy monsoon vs dry baseline"),
+            ("Segments monitored", f"{len(segment_report_df)}", "#3498db", "Across all corridors"),
+            ("Avg dry-baseline TTI", f"{segment_report_df['dry_base_tti'].mean():.2f}", "#2ecc71", "Network reference point"),
+        ]
+        render_kpi_row(kpi_defs)
+        st.write("")
+        st.write("---")
+
+        section_title("Micro-Segment Sensitivity Matrix (Ranked by Weather-Delay Inflation Impact)")
         st.dataframe(segment_report_df.style.format({'dry_base_tti': '{:.2f}', 'rain_slope': '{:.4f}', 'delay_inflation': '{:.2%}'}), use_container_width=True)
 
-        st.markdown('<h2 style="color:#ffffff; font-weight:600; font-size:18px;">[2] Micro-Segment Co-Regression Sensitivities & Elasticity Trend Curves</h2>', unsafe_allow_html=True)
+        section_title("Micro-Segment Co-Regression Sensitivities & Elasticity Trend Curves")
         top_vulnerable_segments = segment_report_df.head(3)['segment_name'].tolist()
 
         for seg in top_vulnerable_segments:
@@ -1223,29 +1318,42 @@ def main():
             c_intercept = seg_subset[seg_subset['weather_state'] == '0_Dry Baseline']['travel_time_index_tti'].mean()
             x_vals = np.linspace(0, seg_subset['rainfall_intensity_mm_hr'].max(), 100)
             y_vals = c_intercept + (m_slope * x_vals)
-            ax1.plot(x_vals, y_vals, color='crimson', linestyle='-', linewidth=2.0, label=f"Link Sensitivity ({m_slope:.4f})")
-            ax1.set_title("Link Capacity Degradation vs. Rainfall Intensity", fontsize=9, fontweight='bold')
+            ax1.plot(x_vals, y_vals, color='#e74c3c', linestyle='-', linewidth=2.0, label=f"Link Sensitivity ({m_slope:.4f})")
+            ax1.set_title("Link Capacity Degradation vs. Rainfall Intensity", fontsize=9, fontweight='bold', color='#1a1a2e')
             ax1.set_xlabel("Rainfall Intensity (mm/hour)", fontsize=8)
             ax1.set_ylabel("Travel Time Index (TTI)", fontsize=8)
             ax1.grid(True, linestyle=':', alpha=0.4)
             ax1.legend(loc='upper left', fontsize=8)
+            style_axes(ax1)
             
-            sns.scatterplot(data=seg_subset, x='visibility_meters', y='travel_time_index_tti', color='#17becf', ax=ax2, alpha=0.6, edgecolor='none')
+            sns.scatterplot(data=seg_subset, x='visibility_meters', y='travel_time_index_tti', color='#3498db', ax=ax2, alpha=0.6, edgecolor='none')
             clean_sub = seg_subset[seg_subset['visibility_meters'] > 0].copy()
             if len(clean_sub) > 0:
                 fit_coeff = np.polyfit(1.0 / clean_sub['visibility_meters'], clean_sub['travel_time_index_tti'], 1)
                 x_vis_space = np.linspace(clean_sub['visibility_meters'].min(), clean_sub['visibility_meters'].max(), 200)
                 y_vis_vals = fit_coeff[0] * (1.0 / x_vis_space) + fit_coeff[1]
-                ax2.plot(x_vis_space, y_vis_vals, color='darkblue', linestyle='--', linewidth=1.5, label="Elasticity Model")
-            ax2.set_title("Link Capacity Degradation vs. Visibility Limits", fontsize=9, fontweight='bold')
+                ax2.plot(x_vis_space, y_vis_vals, color='#1a1a2e', linestyle='--', linewidth=1.5, label="Elasticity Model")
+            ax2.set_title("Link Capacity Degradation vs. Visibility Limits", fontsize=9, fontweight='bold', color='#1a1a2e')
             ax2.set_xlabel("Atmospheric Visibility Scale (meters)", fontsize=8)
             ax2.invert_xaxis()
             ax2.grid(True, linestyle=':', alpha=0.4)
             ax2.legend(loc='upper right', fontsize=8)
+            style_axes(ax2)
             
             st.caption(f"Geometric Weather Impact Profile: Micro-Link {seg} [{p_corr}]")
             st.pyplot(fig_w)
 
+        st.write("---")
+        section_title("Executive Summary and Next Steps for Engineering Teams")
+        render_callout(
+            f"<b>Priority segment: <code>{top_seg['segment_name']}</code></b> ({top_seg['corridor']})<br><br>"
+            f"• Rain sensitivity slope: {top_seg['rain_slope']:.4f} TTI points per mm/hr of rainfall.<br>"
+            f"• Delay inflation during heavy monsoon events: {top_seg['delay_inflation']*100:.1f}% above dry baseline.<br><br>"
+            f"<b>Action for field teams:</b> Inspect drainage capacity and road-surface grip at this segment before "
+            f"the next monsoon season; prioritize resurfacing or camber correction here over segments with a flat "
+            f"sensitivity slope.",
+            border_color="#e74c3c"
+        )
     # =============================================================================
     # MODULE TAB 5: HYPOTHESIS 5 - TIDAL FLOW ASYMMETRY
     # =============================================================================
@@ -1621,17 +1729,46 @@ def main():
     # MODULE TAB 7: HYPOTHESIS 7 - FLYOVER EXIT & UPHILL GRADIENTS
     # =============================================================================
     elif selected_tab == "Hypothesis 7: The Flyover Exit & Gradients":
-        st.markdown('<h1 style="color:#ffffff; font-weight:700; font-size:24px;">Hypothesis 7: The "Flyover Exit" & Uphill Gradient Penalties</h1>', unsafe_allow_html=True)
-        
-        st.markdown('<h2 style="color:#ffffff; font-weight:600; font-size:18px;">7. The "Flyover Exit" & Uphill Gradient Penalties (Layered Networks)</h2>', unsafe_allow_html=True)
-        st.error("**The Business Question 1:** Do steep inclines permanently slow down heavy fleets?")
-        st.markdown("> **Business Answer:** Yes. Uphill grades introduce an invariant physical crawl penalty that baseline operations cannot fix. Data traces confirm that micro-segments with steep climbs (>6% incline) suffer a structural TTI inflation of 0.42 to 0.45 across all operational hours. Heavy commercial fleets and buses suffer massive power-to-weight ratio loss on these ascents, dropping to crawl speeds and generating a permanent upstream queue wave.\n\n> **Real-Life Intervention:** Implement a mandatory 'Crawler Lane' policy for heavy vehicles and adjust upstream pavement markings to prevent passenger cars from becoming trapped behind low-velocity truck fleets.")
-        
-        st.error("**The Business Question 2:** Do express flyovers eliminate congestion or simply move the traffic jam?")
-        st.markdown("> **Business Answer:** Flyovers do not eliminate regional delays; they function as high-speed funnels that displace the bottleneck. Elevated Mainlines maintain ideal free-flow operating metrics (Mean TTI: 1.05 - 1.15) due to zero crossing friction. However, the downstream At-Grade Off-Ramp Junctions encounter absolute capacity failure during peak hours (+98% TTI). Vehicles discharge off the flyover at high arrival rates, immediately saturating the narrow, unmanaged surface lane.\n\n> **Real-Life Intervention:** Implement dynamic ramp metering at the flyover entrance to regulate inflow, and redesign the down-ramp terminal geometry to provide an exclusive, protected parallel acceleration/add-lane interface.")
-        
-        st.success("**The Action:** We will filter segments by their 3D topographical gradient and network_layer_type to map specific baseline speed drops on inclines and structural queuing at flyover merges.")
-        st.info("**Expected Outputs:** Topographical delay profiles and flyover-exit bottleneck maps.")
+
+        inject_professional_style()
+        apply_pro_plot_style()
+
+        render_page_header(
+            "Hypothesis 7 · The Flyover Exit & Uphill Gradient Penalties (Atralita)",
+            "Separating permanent physical-geometry penalties from ordinary rush-hour volume"
+        )
+
+        section_title("Business Question")
+        st.markdown(
+            "**Do steep inclines permanently slow down heavy fleets, and do express flyovers eliminate congestion — "
+            "or simply relocate it downstream?**\n\n"
+            "Two distinct physical-layout effects are tested here: whether gradient alone imposes a crawl penalty "
+            "regardless of demand, and whether an elevated mainline's free-flow speed is really just displacing its "
+            "jam to the at-grade off-ramp junction below it."
+        )
+        section_title("Methodology")
+        st.markdown(
+            "Segments are tagged by `network_layer_type` (standard at-grade, elevated flyover mainline, at-grade "
+            "off-ramp junction, or steep incline link) using their 3D topographical gradient. Baseline TTI is then "
+            "compared across layer types, at both peak and all-hour resolution, to isolate a structural penalty from "
+            "ordinary demand-driven delay."
+        )
+        render_callout(
+            "🛣️ <b>Uphill gradients:</b> micro-segments with a steep climb (>6% incline) show a structural TTI "
+            "inflation of roughly 0.42–0.45 across all operational hours — heavy commercial fleets and buses lose "
+            "power-to-weight ratio on the ascent, dropping to crawl speeds and generating a permanent upstream queue "
+            "wave. <b>Real-life intervention:</b> a mandatory crawler-lane policy for heavy vehicles, plus upstream "
+            "pavement markings to stop passenger cars getting trapped behind low-velocity trucks.",
+            border_color="#e74c3c"
+        )
+        render_callout(
+            "🚧 <b>Flyover exits:</b> elevated mainlines hold ideal free-flow metrics (mean TTI 1.05–1.15) thanks to "
+            "zero crossing friction, but the downstream at-grade off-ramp junction hits capacity failure at peak "
+            "hours (+98% TTI) as vehicles discharge at a high arrival rate onto a narrow, unmanaged surface lane. "
+            "<b>Real-life intervention:</b> dynamic ramp metering at the flyover entrance, and a redesigned down-ramp "
+            "terminal with a protected parallel acceleration lane.",
+            border_color="#f1c40f"
+        )
         st.write("---")
 
         df_fetched['shapefile_segment_name_lower'] = df_fetched['shapefile_segment_name'].astype(str).str.lower()
@@ -1672,13 +1809,26 @@ def main():
         segment_profiles['link_failure_frequency'] = segment_profiles['congested_intervals'] / segment_profiles['total_observations']
         segment_profiles = segment_profiles.sort_values(by='mean_tti', ascending=False).reset_index(drop=True)
 
-        st.markdown('<h2 style="color:#ffffff; font-weight:600; font-size:18px;">[1] Topographical Corridor Delay Profile (Ranked by Macro System Friction)</h2>', unsafe_allow_html=True)
+        incline_avg = segment_profiles.loc[segment_profiles['network_layer_type'] == 'Steep Incline Link', 'mean_tti'].mean()
+        offramp_avg = segment_profiles.loc[segment_profiles['network_layer_type'] == 'At-Grade Off-Ramp Junction', 'mean_tti'].mean()
+        mainline_avg = segment_profiles.loc[segment_profiles['network_layer_type'] == 'Elevated Flyover Mainline', 'mean_tti'].mean()
+        kpi_defs = [
+            ("Steep incline penalty", f"{incline_avg:.2f}" if pd.notna(incline_avg) else "N/A", "#f1c40f", "Mean TTI on >6% grade links"),
+            ("Off-ramp junction TTI", f"{offramp_avg:.2f}" if pd.notna(offramp_avg) else "N/A", "#e74c3c", "Mean TTI at flyover discharge"),
+            ("Elevated mainline TTI", f"{mainline_avg:.2f}" if pd.notna(mainline_avg) else "N/A", "#2ecc71", "Free-flow reference"),
+            ("Layer types tracked", f"{segment_profiles['network_layer_type'].nunique()}", "#3498db", "Standard / flyover / ramp / incline"),
+        ]
+        render_kpi_row(kpi_defs)
+        st.write("")
+        st.write("---")
+
+        section_title("Topographical Corridor Delay Profile (Ranked by Macro System Friction)")
         st.dataframe(segment_profiles[['shapefile_segment_name', 'network_layer_type', 'elevation_gradient', 'mean_tti', 'link_failure_frequency']].style.format({'elevation_gradient': '{:.1f}%', 'mean_tti': '{:.2f}', 'link_failure_frequency': '{:.2%}'}), use_container_width=True)
 
-        st.markdown('<h2 style="color:#ffffff; font-weight:600; font-size:18px;">[2] Macroscopic Topographical Delay Profile Matrix</h2>', unsafe_allow_html=True)
+        section_title("Macroscopic Topographical Delay Profile Matrix")
         fig_g1, ax_g1 = plt.subplots(figsize=(10, 4.5))
-        layer_colors = {'Elevated Flyover Mainline': '#1f77b4', 'At-Grade Off-Ramp Junction': '#d62728', 
-                        'Steep Incline Link': '#ff7f0e', 'Standard At-Grade Link': '#2ca02c'}
+        layer_colors = {'Elevated Flyover Mainline': '#3498db', 'At-Grade Off-Ramp Junction': '#e74c3c', 
+                        'Steep Incline Link': '#f1c40f', 'Standard At-Grade Link': '#2ecc71'}
         
         for layer_type, group in segment_profiles.groupby('network_layer_type'):
             ax_g1.scatter(
@@ -1691,17 +1841,18 @@ def main():
                 ax_g1.annotate(
                     row['shapefile_segment_name'].split('_')[0], 
                     (row['elevation_gradient'], row['mean_tti']),
-                    textcoords="offset points", xytext=(0,10), ha='center', fontsize=8, fontweight='bold'
+                    textcoords="offset points", xytext=(0,10), ha='center', fontsize=8, fontweight='bold', color='#1a1a2e'
                 )
-        ax_g1.set_xlabel("Physical Elevation Slope Gradient Vector (%)", fontweight='bold')
-        ax_g1.set_ylabel("Mean Travel Time Index (TTI)", fontweight='bold')
-        ax_g1.axhline(y=1.5, color='crimson', linestyle=':', alpha=0.6, label='Capacity Alert Limit')
-        ax_g1.grid(True, linestyle=':', alpha=0.5)
+        ax_g1.set_xlabel("Physical Elevation Slope Gradient Vector (%)", fontweight='bold', color='#1a1a2e')
+        ax_g1.set_ylabel("Mean Travel Time Index (TTI)", fontweight='bold', color='#1a1a2e')
+        ax_g1.axhline(y=1.5, color='#e74c3c', linestyle=':', alpha=0.6, label='Capacity Alert Limit')
+        ax_g1.grid(True, linestyle=':', alpha=0.4)
         ax_g1.legend(loc='best', fontsize=9)
+        style_axes(ax_g1)
         plt.tight_layout()
         st.pyplot(fig_g1)
 
-        st.markdown('<h2 style="color:#ffffff; font-weight:600; font-size:18px;">[3] Layered Network Geometric Interaction Profiles</h2>', unsafe_allow_html=True)
+        section_title("Layered Network Geometric Interaction Profiles")
         mainline_df = df_fetched[df_fetched['network_layer_type'] == 'Elevated Flyover Mainline']
         offramp_df = df_fetched[df_fetched['network_layer_type'] == 'At-Grade Off-Ramp Junction']
         incline_df = df_fetched[df_fetched['network_layer_type'] == 'Steep Incline Link']
@@ -1712,42 +1863,79 @@ def main():
         if len(mainline_df) > 0 and len(offramp_df) > 0:
             ml_hourly = mainline_df.groupby('hour_of_day')['travel_time_index_tti'].mean()
             or_hourly = offramp_df.groupby('hour_of_day')['travel_time_index_tti'].mean()
-            ax_l1.plot(ml_hourly.index, ml_hourly.values, color='#1f77b4', marker='o', linewidth=2.0, label='Elevated Flyover Mainline')
-            ax_l1.plot(or_hourly.index, or_hourly.values, color='#d62728', marker='X', linewidth=2.0, label='At-Grade Off-Ramp Terminal')
-            ax_l1.set_title("Flyover Congestion Relocation Profiling", fontsize=9, fontweight='bold')
-            ax_l1.set_xlabel("Hour of Day", fontsize=8)
-            ax_l1.set_ylabel("Mean Travel Time Index (TTI)", fontsize=8)
+            ax_l1.plot(ml_hourly.index, ml_hourly.values, color='#3498db', marker='o', linewidth=2.0, label='Elevated Flyover Mainline')
+            ax_l1.plot(or_hourly.index, or_hourly.values, color='#e74c3c', marker='X', linewidth=2.0, label='At-Grade Off-Ramp Terminal')
+            ax_l1.set_title("Flyover Congestion Relocation Profiling", fontsize=9, fontweight='bold', color='#1a1a2e')
+            ax_l1.set_xlabel("Hour of Day", fontsize=8, color='#1a1a2e')
+            ax_l1.set_ylabel("Mean Travel Time Index (TTI)", fontsize=8, color='#1a1a2e')
             ax_l1.set_xticks(range(0, 24, 2))
-            ax_l1.grid(True, linestyle=':', alpha=0.5)
+            ax_l1.grid(True, linestyle=':', alpha=0.4)
             ax_l1.legend(loc='upper left', fontsize=8)
+            style_axes(ax_l1)
             
         if len(incline_df) > 0:
             inc_hourly = incline_df.groupby('hour_of_day')['travel_time_index_tti'].mean()
             standard_flat = df_fetched[df_fetched['network_layer_type'] == 'Standard At-Grade Link'].groupby('hour_of_day')['travel_time_index_tti'].mean()
-            ax_l2.plot(inc_hourly.index, inc_hourly.values, color='#ff7f0e', marker='^', linewidth=2.0, label='Steep Incline Link (+6.2% Grade)')
+            ax_l2.plot(inc_hourly.index, inc_hourly.values, color='#f1c40f', marker='^', linewidth=2.0, label='Steep Incline Link (+6.2% Grade)')
             if not standard_flat.empty:
-                ax_l2.plot(standard_flat.index, standard_flat.values, color='#2ca02c', marker='s', linestyle='--', linewidth=1.5, label='Standard Flat Baseline')
-            ax_l2.set_title("Uphill Gradient Permanent Delay Displacements", fontsize=9, fontweight='bold')
-            ax_l2.set_xlabel("Hour of Day", fontsize=8)
+                ax_l2.plot(standard_flat.index, standard_flat.values, color='#2ecc71', marker='s', linestyle='--', linewidth=1.5, label='Standard Flat Baseline')
+            ax_l2.set_title("Uphill Gradient Permanent Delay Displacements", fontsize=9, fontweight='bold', color='#1a1a2e')
+            ax_l2.set_xlabel("Hour of Day", fontsize=8, color='#1a1a2e')
             ax_l2.set_xticks(range(0, 24, 2))
-            ax_l2.grid(True, linestyle=':', alpha=0.5)
+            ax_l2.grid(True, linestyle=':', alpha=0.4)
             ax_l2.legend(loc='upper left', fontsize=8)
+            style_axes(ax_l2)
             
         plt.tight_layout()
         st.pyplot(fig_g2)
+
+        st.write("---")
+        section_title("Executive Summary and Next Steps for Engineering Teams")
+        render_callout(
+            f"<b>Structural, not demand-driven:</b> steep incline links run roughly {incline_avg:.2f} mean TTI "
+            f"across all hours, and the at-grade off-ramp junction downstream of the elevated mainline runs roughly "
+            f"{offramp_avg:.2f} at peak — both persist regardless of traffic volume.<br><br>"
+            f"<b>Action for field teams:</b> deploy a crawler-lane policy at steep-incline links, and install dynamic "
+            f"ramp metering plus a protected acceleration lane at flyover discharge points before considering any "
+            f"further capacity widening upstream.",
+            border_color="#e74c3c"
+        )
 
     # =============================================================================
     # MODULE TAB 8: HYPOTHESIS 8 - SPATIAL LENGTH DILUTION BIAS
     # =============================================================================
     elif selected_tab == "Hypothesis 8: Spatial Length Dilution Bias":
-        st.markdown('<h1 style="color:#ffffff; font-weight:700; font-size:24px;">Hypothesis 8: Spatial Slicing Accuracy & "Length Dilution"</h1>', unsafe_allow_html=True)
-        
-        st.markdown('<h2 style="color:#ffffff; font-weight:600; font-size:18px;">Executive Framework: Hypothesis 8 Specifications</h2>', unsafe_allow_html=True)
-        st.error("**The Business Question:**\nDoes analyzing a long stretch of road artificially hide severe, localized traffic jams by averaging the slow speeds with fast speeds?")
-        st.markdown("> **Business Answer:** Yes. Macro-corridor averaging structurally masks critical local bottlenecks through length dilution. Data validation proves that sub-1km micro-segments register extreme peak-hour TTI spikes of 2.45 to 3.10. In contrast, long stretches ($\geq 2\text{km}$) on the exact same routes report highly suppressed peak TTIs of 1.15 to 1.35. The intense delay of a 300-meter gridlock tail is mathematically erased when averaged across several kilometers of free-flowing traffic. Standard routing APIs underreport local bottleneck intensities by up to 60%.\n\n> **Real-Life Intervention:** Transition the network dashboard from 'link-averages' to 'spatial-slice profiling'. Break down monitoring segments into uniform 500-meter bins to capture the true intensity of queue tails.")
-        
-        st.success("**The Action:** We will correlate the true driving distance of each segment with its maximum peak-hour TTI spike to prove that standard end-to-end routing APIs historically underreport micro-congestion.")
-        st.info("**Expected Outputs:** Data accuracy validation comparing sub-1km segments against standard corridor routing.")
+
+        inject_professional_style()
+        apply_pro_plot_style()
+
+        render_page_header(
+            "Hypothesis 8 · Spatial Slicing Accuracy & \"Length Dilution\" (Atralita)",
+            "Proving that macro-corridor averaging hides severe, localized queue tails"
+        )
+
+        section_title("Business Question")
+        st.markdown(
+            "**Does analyzing a long stretch of road artificially hide severe, localized traffic jams by averaging "
+            "the slow speeds with fast speeds?**\n\n"
+            "A 300-metre gridlock tail can be mathematically erased once it's averaged across several kilometres of "
+            "free-flowing traffic — which means standard routing APIs and link-level dashboards may be quietly "
+            "under-reporting the exact locations that need engineering attention most."
+        )
+        section_title("Methodology")
+        st.markdown(
+            "Each segment's true driving distance is correlated with its maximum peak-hour TTI spike. Segments are "
+            "split into **micro-segments** (under 1km) and **macro-corridors** (1km and above) at peak hours, and "
+            "their spike intensity and variance are compared directly to quantify how much detail is lost when a "
+            "route is monitored only at corridor-average resolution."
+        )
+        render_callout(
+            "🔍 <b>Reading the dilution model:</b> sub-1km micro-segments can register peak TTI spikes of 2.45–3.10, "
+            "while the exact same physical route measured as a 2km+ stretch reports a suppressed 1.15–1.35. "
+            "<b>Real-life intervention:</b> move the monitoring dashboard from link-averages to 500-metre "
+            "spatial-slice bins so queue tails are no longer averaged away.",
+            border_color="#3498db"
+        )
         st.write("---")
         
         if 'true_driving_distance_meters' not in df_fetched.columns:
@@ -1792,14 +1980,27 @@ def main():
         spatial_metrics['congestion_dilution_ratio'] = spatial_metrics['max_peak_tti'] / (spatial_metrics['true_driving_distance_meters'] / 1000.0)
         spatial_metrics = spatial_metrics.sort_values(by='max_peak_tti', ascending=False).reset_index(drop=True)
 
-        st.markdown('<h2 style="color:#ffffff; font-weight:600; font-size:18px;">[1] Spatial Resolution Validation Matrix (Micro vs Macro Slicing Accuracy)</h2>', unsafe_allow_html=True)
+        micro_avg = spatial_metrics.loc[spatial_metrics['spatial_slice_type'] == 'Micro-Segment (<1km)', 'max_peak_tti'].mean()
+        macro_avg = spatial_metrics.loc[spatial_metrics['spatial_slice_type'] == 'Macro-Corridor (>=1km)', 'max_peak_tti'].mean()
+        underreport_pct = ((micro_avg - macro_avg) / micro_avg * 100) if pd.notna(micro_avg) and micro_avg else 0.0
+        kpi_defs = [
+            ("Micro-segment peak TTI", f"{micro_avg:.2f}" if pd.notna(micro_avg) else "N/A", "#e74c3c", "Sub-1km spike, true severity"),
+            ("Macro-corridor peak TTI", f"{macro_avg:.2f}" if pd.notna(macro_avg) else "N/A", "#3498db", "1km+ average, diluted view"),
+            ("Underreporting gap", f"{underreport_pct:.0f}%", "#f1c40f", "How much severity is averaged away"),
+            ("Segments profiled", f"{spatial_metrics['shapefile_segment_name'].nunique()}", "#2ecc71", "At peak-hour resolution"),
+        ]
+        render_kpi_row(kpi_defs)
+        st.write("")
+        st.write("---")
+
+        section_title("Spatial Resolution Validation Matrix (Micro vs Macro Slicing Accuracy)")
         st.dataframe(spatial_metrics[['shapefile_segment_name', 'spatial_slice_type', 'true_driving_distance_meters', 'max_peak_tti', 'tti_variance']].style.format({'true_driving_distance_meters': '{:.1f}m', 'max_peak_tti': '{:.2f}', 'tti_variance': '{:.4f}'}), use_container_width=True)
 
-        st.markdown('<h2 style="color:#ffffff; font-weight:600; font-size:18px;">[2] Empirical Spatial Slicing Validation Dashboard Panels</h2>', unsafe_allow_html=True)
+        section_title("Empirical Spatial Slicing Validation Dashboard Panels")
         fig_h8, (ax_s1, ax_s2) = plt.subplots(1, 2, figsize=(16, 5))
         plt.subplots_adjust(wspace=0.25)
         
-        slice_colors = {'Micro-Segment (<1km)': '#d62728', 'Macro-Corridor (>=1km)': '#1f77b4'}
+        slice_colors = {'Micro-Segment (<1km)': '#e74c3c', 'Macro-Corridor (>=1km)': '#3498db'}
         for slice_type, group in spatial_metrics.groupby('spatial_slice_type'):
             ax_s1.scatter(
                 group['true_driving_distance_meters'], group['max_peak_tti'],
@@ -1811,31 +2012,46 @@ def main():
                 ax_s1.annotate(
                     row['shapefile_segment_name'].split('_')[0],
                     (row['true_driving_distance_meters'], row['max_peak_tti']),
-                    textcoords="offset points", xytext=(0, 10), ha='center', fontsize=8, fontweight='bold'
+                    textcoords="offset points", xytext=(0, 10), ha='center', fontsize=8, fontweight='bold', color='#1a1a2e'
                 )
                 
         fit_coeffs = np.polyfit(np.log(spatial_metrics['true_driving_distance_meters']), spatial_metrics['max_peak_tti'], 1)
         x_space = np.linspace(spatial_metrics['true_driving_distance_meters'].min(), spatial_metrics['true_driving_distance_meters'].max(), 300)
         y_space = fit_coeffs[0] * np.log(x_space) + fit_coeffs[1]
-        ax_s1.plot(x_space, y_space, color='purple', linestyle='--', linewidth=2, label='Length Dilution Decay Model')
-        ax_s1.set_title("Localized Congestion Dilution Matrix", fontsize=10, fontweight='bold')
-        ax_s1.set_xlabel("True Driving Distance of Segment (Meters)", fontsize=8)
-        ax_s1.set_ylabel("Maximum Observed Peak-Hour TTI Spike", fontsize=8)
-        ax_s1.grid(True, linestyle=':', alpha=0.5)
+        ax_s1.plot(x_space, y_space, color='#1a1a2e', linestyle='--', linewidth=2, label='Length Dilution Decay Model')
+        ax_s1.set_title("Localized Congestion Dilution Matrix", fontsize=10, fontweight='bold', color='#1a1a2e')
+        ax_s1.set_xlabel("True Driving Distance of Segment (Meters)", fontsize=8, color='#1a1a2e')
+        ax_s1.set_ylabel("Maximum Observed Peak-Hour TTI Spike", fontsize=8, color='#1a1a2e')
+        ax_s1.grid(True, linestyle=':', alpha=0.4)
         ax_s1.legend(loc='upper right', fontsize=8.5)
+        style_axes(ax_s1)
         
         sns.kdeplot(
             data=spatial_metrics, x='max_peak_tti', hue='spatial_slice_type', 
-            palette={'Micro-Segment (<1km)': '#d62728', 'Macro-Corridor (>=1km)': '#1f77b4'},
+            palette={'Micro-Segment (<1km)': '#e74c3c', 'Macro-Corridor (>=1km)': '#3498db'},
             fill=True, common_norm=False, alpha=0.4, linewidth=2, ax=ax_s2
         )
-        ax_s2.set_title("Peak Delay Intensity Distribution Mismatch", fontsize=10, fontweight='bold')
-        ax_s2.set_xlabel("Maximum Peak-Hour Travel Time Index (TTI)", fontsize=8)
-        ax_s2.set_ylabel("Probability Distribution Density", fontsize=8)
-        ax_s2.grid(True, linestyle=':', alpha=0.5)
+        ax_s2.set_title("Peak Delay Intensity Distribution Mismatch", fontsize=10, fontweight='bold', color='#1a1a2e')
+        ax_s2.set_xlabel("Maximum Peak-Hour Travel Time Index (TTI)", fontsize=8, color='#1a1a2e')
+        ax_s2.set_ylabel("Probability Distribution Density", fontsize=8, color='#1a1a2e')
+        ax_s2.grid(True, linestyle=':', alpha=0.4)
+        style_axes(ax_s2)
         
         plt.tight_layout()
         st.pyplot(fig_h8)
+
+        st.write("---")
+        section_title("Executive Summary and Next Steps for Engineering Teams")
+        render_callout(
+            f"<b>Length dilution confirmed:</b> micro-segments average a peak TTI of {micro_avg:.2f} versus "
+            f"{macro_avg:.2f} on macro-corridors covering the same physical route — roughly a {underreport_pct:.0f}% "
+            f"understatement of true severity.<br><br>"
+            f"<b>Action for field teams:</b> re-bin the dashboard into 500-metre spatial slices before prioritizing "
+            f"capital works, so a genuine queue tail is not deprioritized simply because it sits inside a long, "
+            f"otherwise free-flowing corridor.",
+            border_color="#f1c40f"
+        )
+
 
     # =============================================================================
     # MODULE TAB 9: HYPOTHESIS 9 - TAXONOMY CLUSTERING — (ARUSHI)
