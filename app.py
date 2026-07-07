@@ -21,29 +21,6 @@ st.markdown("""
     div.stButton > button:first-child {
         background-color: #1f77b4; color: white; border-radius: 6px; font-weight: bold;
     }
-    /* Force all headings to be dark with !important to override Streamlit's opacity/muted text */
-    .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4, 
-    .stMarkdown h5, .stMarkdown h6,
-    .st-emotion-cache-1v0mbdj h1, .st-emotion-cache-1v0mbdj h2, .st-emotion-cache-1v0mbdj h3,
-    .st-emotion-cache-1v0mbdj h4, .st-emotion-cache-1v0mbdj h5, .st-emotion-cache-1v0mbdj h6,
-    .element-container h1, .element-container h2, .element-container h3, .element-container h4,
-    div[data-testid="stMarkdown"] h1, div[data-testid="stMarkdown"] h2, 
-    div[data-testid="stMarkdown"] h3, div[data-testid="stMarkdown"] h4,
-    h1, h2, h3, h4, h5, h6 {
-        color: #0f172a !important;
-        font-weight: 700 !important;
-        opacity: 1 !important;
-    }
-    .st-emotion-cache-1v0mbdj {
-        color: #0f172a !important;
-    }
-    /* Ensure error/success/info boxes have readable text */
-    .stAlert {
-        color: #0f172a !important;
-    }
-    .stAlert p, .stAlert li, .stAlert div {
-        color: #0f172a !important;
-    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -127,7 +104,7 @@ def main():
     # MODULE TAB 0: DATASET OVERVIEW & AUDIT MATRIX TABLES
     # =============================================================================
     if selected_tab == "Dataset Overview & Audit Table":
-        st.header("Telemetry Stream Overview & Pavement Integrity Audit Matrix")
+        st.markdown('<b style="font-size:24px; color:#1a1a2e;">Telemetry Stream Overview & Pavement Integrity Audit Matrix</b>', unsafe_allow_html=True)
         st.write("Provides a real-time macroscopic review of columns, data structures, and spatial configurations.")
         
         kpi_col1, kpi_col2, kpi_col3 = st.columns(3)
@@ -140,10 +117,10 @@ def main():
             unique_seg = df_fetched['shapefile_segment_name'].nunique() if 'shapefile_segment_name' in df_fetched.columns else 0
             st.metric(label="Monitored Shapefile Links", value=unique_seg)
             
-        st.write("### Ingested CSV Table View Slice (First 100 Records)")
+        st.markdown('<b style="font-size:18px; color:#1a1a2e;">Ingested CSV Table View Slice (First 100 Records)</b>', unsafe_allow_html=True)
         st.dataframe(df_fetched.head(100), use_container_width=True)
         
-        st.write("### Metadata Data Column Profiles & Operational Summary Specs")
+        st.markdown('<b style="font-size:18px; color:#1a1a2e;">Metadata Data Column Profiles & Operational Summary Specs</b>', unsafe_allow_html=True)
         buffer_summary = pd.DataFrame({
             'Data Column Type': df_fetched.dtypes.astype(str),
             'Non-Null Observations Counts': df_fetched.count(),
@@ -180,7 +157,7 @@ def main():
             .h1-kpi-value {
                 font-size: 26px;
                 font-weight: 700;
-                color: #0f172a;
+                color: #1a1a2e;
                 line-height: 1.15;
             }
             .h1-kpi-sub {
@@ -188,73 +165,24 @@ def main():
                 color: #6b7a8f;
                 margin-top: 4px;
             }
-            .h1-section-title {
-                font-size: 22px !important;
-                font-weight: 700 !important;
-                color: #0f172a !important;
-                margin-top: 8px !important;
-                margin-bottom: 4px !important;
-                opacity: 1 !important;
-            }
-            .h1-section-sub {
-                font-size: 14px;
-                color: #4a5568;
-                margin-bottom: 12px;
-            }
             .h1-callout {
                 background-color: #eaf2fb;
                 border-left: 4px solid #3498db;
                 padding: 14px 18px;
                 border-radius: 6px;
                 font-size: 14.5px;
-                color: #0f172a;
+                color: #1a1a2e;
                 margin-bottom: 14px;
             }
             .h1-callout b, .h1-callout strong {
-                color: #0f172a !important;
-            }
-            /* Force dark headings with !important to override Streamlit's opacity/muted text */
-            .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4,
-            .st-emotion-cache-1v0mbdj h1, .st-emotion-cache-1v0mbdj h2, .st-emotion-cache-1v0mbdj h3,
-            .st-emotion-cache-1v0mbdj h4, .st-emotion-cache-1v0mbdj h5, .st-emotion-cache-1v0mbdj h6,
-            .st-emotion-cache-1v0mbdj .stMarkdown h1, .st-emotion-cache-1v0mbdj .stMarkdown h2,
-            div.stMarkdown h1, div.stMarkdown h2, div.stMarkdown h3, div.stMarkdown h4,
-            .element-container .stMarkdown h1, .element-container .stMarkdown h2,
-            .element-container .stMarkdown h3, .element-container .stMarkdown h4,
-            div[data-testid="stMarkdown"] h1, div[data-testid="stMarkdown"] h2,
-            div[data-testid="stMarkdown"] h3, div[data-testid="stMarkdown"] h4,
-            .st-emotion-cache-1v0mbdj .st-emotion-cache-1v0mbdj h1,
-            .st-emotion-cache-1v0mbdj .st-emotion-cache-1v0mbdj h2,
-            .st-emotion-cache-1v0mbdj .st-emotion-cache-1v0mbdj h3,
-            .st-emotion-cache-1v0mbdj .st-emotion-cache-1v0mbdj h4 {
-                color: #0f172a !important;
-                font-weight: 700 !important;
-                opacity: 1 !important;
-            }
-            .st-emotion-cache-1v0mbdj {
-                color: #0f172a !important;
-            }
-            /* Make sure error/success/info boxes have readable text */
-            .stAlert {
-                color: #0f172a !important;
-            }
-            .stAlert p, .stAlert li, .stAlert div {
-                color: #0f172a !important;
-            }
-            /* Override any opacity filters that Streamlit applies */
-            .stMarkdown {
-                opacity: 1 !important;
-            }
-            .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4 {
-                opacity: 1 !important;
+                color: #1a1a2e !important;
             }
             </style>
         """, unsafe_allow_html=True)
 
-        # Use HTML for main heading to ensure dark color with explicit styling
+        # Use bold HTML for main heading to ensure dark, bold text
         st.markdown(
-            '<h1 style="font-size:28px; font-weight:800; color:#0f172a; margin-bottom:2px; opacity:1 !important;">'
-            'Hypothesis 1 · Systemic Bottleneck Localization</h1>'
+            '<b style="font-size:28px; color:#1a1a2e;">Hypothesis 1 · Systemic Bottleneck Localization</b>'
             '<div style="font-size:15px; color:#4a5568; margin-bottom:14px;">'
             'True root-cause bottlenecks vs. spillover / victim traffic, ranked for engineering triage</div>',
             unsafe_allow_html=True
@@ -297,12 +225,9 @@ def main():
             return ax
 
         # ==============================================================================
-        # 1. BUSINESS QUESTION - Using HTML for dark headings with explicit styling
+        # 1. BUSINESS QUESTION - Using bold HTML for headings
         # ==============================================================================
-        st.markdown(
-            '<h2 style="font-size:22px; font-weight:700; color:#0f172a; margin-top:8px; margin-bottom:4px; opacity:1 !important;">Business Question</h2>',
-            unsafe_allow_html=True
-        )
+        st.markdown('<b style="font-size:22px; color:#1a1a2e;">Business Question</b>', unsafe_allow_html=True)
         st.markdown(
             "**Which specific segments are true root-cause bottlenecks that generate cascading spillover queues "
             "across a corridor, and where should engineering crews be sent first?**\n\n"
@@ -315,10 +240,7 @@ def main():
             "belongs at the segment actually causing the queue."
         )
 
-        st.markdown(
-            '<h2 style="font-size:22px; font-weight:700; color:#0f172a; margin-top:8px; margin-bottom:4px; opacity:1 !important;">Methodology</h2>',
-            unsafe_allow_html=True
-        )
+        st.markdown('<b style="font-size:22px; color:#1a1a2e;">Methodology</b>', unsafe_allow_html=True)
         st.markdown(
             "Travel Time Index (TTI) is computed at sub-1km segment resolution and compared against a threshold set "
             "from each corridor's own distribution, not a single citywide cutoff, so naturally busier trunk roads "
@@ -554,10 +476,7 @@ def main():
         # ==============================================================================
         # 5. SEGMENT-LEVEL RANKING — direct answer to the business question
         # ==============================================================================
-        st.markdown(
-            '<h2 style="font-size:22px; font-weight:700; color:#0f172a; margin-top:8px; margin-bottom:4px; opacity:1 !important;">Segment-Level Ranking</h2>',
-            unsafe_allow_html=True
-        )
+        st.markdown('<b style="font-size:22px; color:#1a1a2e;">Segment-Level Ranking</b>', unsafe_allow_html=True)
         st.markdown(
             '<div style="font-size:14px; color:#4a5568; margin-bottom:12px;">Every monitored segment, ranked by the composite priority score (MCBI)</div>',
             unsafe_allow_html=True
@@ -594,17 +513,14 @@ def main():
             'Avg onset time': '{:.1f}:00', 'MCBI score': '{:.4f}'
         }).set_properties(**{'font-size': '13px'}) \
          .set_table_styles([
-             {'selector': 'th', 'props': [('background-color', '#0f172a'), ('color', 'white'),
+             {'selector': 'th', 'props': [('background-color', '#1a1a2e'), ('color', 'white'),
                                            ('font-weight', '600'), ('font-size', '12.5px'),
                                            ('text-transform', 'uppercase'), ('letter-spacing', '0.02em')]}
          ])
         st.dataframe(styled_df, use_container_width=True)
 
         st.write("---")
-        st.markdown(
-            '<h2 style="font-size:22px; font-weight:700; color:#0f172a; margin-top:8px; margin-bottom:4px; opacity:1 !important;">Corridor-Level Summary</h2>',
-            unsafe_allow_html=True
-        )
+        st.markdown('<b style="font-size:22px; color:#1a1a2e;">Corridor-Level Summary</b>', unsafe_allow_html=True)
         corridor_rankings = df_analyzed.groupby('corridor_name').agg(
             mean_tti=('travel_time_index_tti', 'mean'),
             max_tti=('travel_time_index_tti', 'max'),
@@ -615,7 +531,7 @@ def main():
             {'mean_tti': '{:.3f}', 'max_tti': '{:.2f}'}
         ).background_gradient(subset=['mean_tti'], cmap='Reds') \
          .set_table_styles([
-             {'selector': 'th', 'props': [('background-color', '#0f172a'), ('color', 'white'),
+             {'selector': 'th', 'props': [('background-color', '#1a1a2e'), ('color', 'white'),
                                            ('font-weight', '600'), ('font-size', '12.5px'),
                                            ('text-transform', 'uppercase')]}
          ])
@@ -629,10 +545,7 @@ def main():
         # 6. MCBI SCORE DECOMPOSITION
         # ==============================================================================
         st.write("---")
-        st.markdown(
-            '<h2 style="font-size:22px; font-weight:700; color:#0f172a; margin-top:8px; margin-bottom:4px; opacity:1 !important;">MCBI Score Decomposition — Top 5 Segments</h2>',
-            unsafe_allow_html=True
-        )
+        st.markdown('<b style="font-size:22px; color:#1a1a2e;">MCBI Score Decomposition — Top 5 Segments</b>', unsafe_allow_html=True)
         st.markdown(
             '<div style="font-size:14px; color:#4a5568; margin-bottom:12px;">What is driving each segment onto the priority list</div>',
             unsafe_allow_html=True
@@ -661,9 +574,9 @@ def main():
             ax1.bar(labels, decomp_top5[col], bottom=bottom, label=label, color=color, edgecolor='white', linewidth=0.6)
             bottom += decomp_top5[col].values
 
-        ax1.set_ylabel("Weighted contribution to MCBI score", fontweight='bold', fontsize=9, color='#0f172a')
-        ax1.set_xlabel("Segment", fontweight='bold', fontsize=9, color='#0f172a')
-        ax1.set_title("What is driving each segment's priority score", fontsize=11, fontweight='bold', pad=12, color='#0f172a')
+        ax1.set_ylabel("Weighted contribution to MCBI score", fontweight='bold', fontsize=9, color='#1a1a2e')
+        ax1.set_xlabel("Segment", fontweight='bold', fontsize=9, color='#1a1a2e')
+        ax1.set_title("What is driving each segment's priority score", fontsize=11, fontweight='bold', pad=12, color='#1a1a2e')
         ax1.set_ylim(0, 1.05)
         ax1.grid(axis='y', linestyle=':', alpha=0.4)
         ax1.legend(loc='upper right', fontsize=8.5, frameon=True, facecolor='white', edgecolor='none')
@@ -678,10 +591,7 @@ def main():
         # 7. SPATIAL PROPAGATION ANALYSIS — colored by status
         # ==============================================================================
         st.write("---")
-        st.markdown(
-            '<h2 style="font-size:22px; font-weight:700; color:#0f172a; margin-top:8px; margin-bottom:4px; opacity:1 !important;">Spatial Propagation Analysis</h2>',
-            unsafe_allow_html=True
-        )
+        st.markdown('<b style="font-size:22px; color:#1a1a2e;">Spatial Propagation Analysis</b>', unsafe_allow_html=True)
         st.caption(
             "Segments are placed in physical order along the corridor. Bar height is congestion frequency; the label "
             "above each bar is the average breakdown hour. Bar color shows status: red = confirmed root cause, "
@@ -709,9 +619,9 @@ def main():
                 ax.set_xticks(x_pos)
                 ax.set_xticklabels(corr_metrics['segment_id'].str.replace(f"{corr} - ", "", regex=False),
                                    rotation=15, ha='right', fontsize=8)
-                ax.set_ylabel("Congestion density (%)", fontweight='bold', fontsize=9, color='#0f172a')
-                ax.set_xlabel("Segment, ordered by physical position along the corridor", fontsize=9, fontweight='bold', color='#0f172a')
-                ax.set_title(f"Propagation profile: {corr}", fontsize=11, fontweight='bold', pad=10, color='#0f172a')
+                ax.set_ylabel("Congestion density (%)", fontweight='bold', fontsize=9, color='#1a1a2e')
+                ax.set_xlabel("Segment, ordered by physical position along the corridor", fontsize=9, fontweight='bold', color='#1a1a2e')
+                ax.set_title(f"Propagation profile: {corr}", fontsize=11, fontweight='bold', pad=10, color='#1a1a2e')
                 ax.set_ylim(0, max_height * 1.25 if max_height > 0 else 1)
                 ax.grid(axis='y', linestyle=':', alpha=0.35, zorder=0)
                 _style_axes(ax)
@@ -724,10 +634,7 @@ def main():
         # 8. TOP SEGMENT PROFILES (weekday vs weekend) — enlarged per user request
         # ==============================================================================
         st.write("---")
-        st.markdown(
-            '<h2 style="font-size:22px; font-weight:700; color:#0f172a; margin-top:8px; margin-bottom:4px; opacity:1 !important;">Top Priority Segment Profiles</h2>',
-            unsafe_allow_html=True
-        )
+        st.markdown('<b style="font-size:22px; color:#1a1a2e;">Top Priority Segment Profiles</b>', unsafe_allow_html=True)
         st.markdown(
             '<div style="font-size:14px; color:#4a5568; margin-bottom:12px;">Hourly TTI pattern for the top 5 ranked segments, weekday vs. weekend</div>',
             unsafe_allow_html=True
@@ -759,11 +666,11 @@ def main():
             badge_color = STATUS_COLORS[status]
             ax_trend.set_title(
                 f"Rank {rank + 1}: {row['segment_id']}   ·   {status}",
-                fontsize=14, fontweight='bold', pad=12, color='#0f172a'
+                fontsize=14, fontweight='bold', pad=12, color='#1a1a2e'
             )
             ax_trend.title.set_bbox(dict(facecolor='none', edgecolor='none'))
-            ax_trend.set_xlabel("Hour of day", fontsize=11, fontweight='bold', color='#0f172a')
-            ax_trend.set_ylabel("TTI", fontsize=11, fontweight='bold', color='#0f172a')
+            ax_trend.set_xlabel("Hour of day", fontsize=11, fontweight='bold', color='#1a1a2e')
+            ax_trend.set_ylabel("TTI", fontsize=11, fontweight='bold', color='#1a1a2e')
             ax_trend.set_xlim(0, 23)
             ax_trend.set_xticks(range(0, 24, 2))
             ax_trend.grid(True, linestyle=':', alpha=0.5)
@@ -782,10 +689,7 @@ def main():
         # ==============================================================================
         if len(multi_corridors) > 0:
             st.write("---")
-            st.markdown(
-                '<h2 style="font-size:22px; font-weight:700; color:#0f172a; margin-top:8px; margin-bottom:4px; opacity:1 !important;">Empirical Verification: Root-Cause Events</h2>',
-                unsafe_allow_html=True
-            )
+            st.markdown('<b style="font-size:22px; color:#1a1a2e;">Empirical Verification: Root-Cause Events</b>', unsafe_allow_html=True)
             for corr in multi_corridors:
                 case_df = df_analyzed[df_analyzed['corridor_name'] == corr]
                 corr_metrics_map = metrics[metrics['corridor_name'] == corr].set_index('segment_uid')['classification']
@@ -804,9 +708,9 @@ def main():
                         ax4.scatter(rc_hourly.index, rc_hourly.values, color='#e74c3c', zorder=6, s=130,
                                     marker='X', edgecolors='white', linewidths=1.0, label=f"Verified breakdown ({seg_label})")
 
-                ax4.set_title(f"Corridor: {corr}", fontsize=11, fontweight='bold', pad=12, color='#0f172a')
-                ax4.set_xlabel("Hour of day", fontweight='bold', fontsize=9, color='#0f172a')
-                ax4.set_ylabel("Mean TTI", fontweight='bold', fontsize=9, color='#0f172a')
+                ax4.set_title(f"Corridor: {corr}", fontsize=11, fontweight='bold', pad=12, color='#1a1a2e')
+                ax4.set_xlabel("Hour of day", fontweight='bold', fontsize=9, color='#1a1a2e')
+                ax4.set_ylabel("Mean TTI", fontweight='bold', fontsize=9, color='#1a1a2e')
                 ax4.set_xlim(0, 23)
                 ax4.set_xticks(range(0, 24, 2))
                 ax4.grid(True, linestyle=':', alpha=0.4)
@@ -827,10 +731,7 @@ def main():
         # 10. EXECUTIVE SUMMARY & ENGINEERING NEXT STEPS
         # ==============================================================================
         st.write("---")
-        st.markdown(
-            '<h2 style="font-size:22px; font-weight:700; color:#0f172a; margin-top:8px; margin-bottom:4px; opacity:1 !important;">Executive Summary and Next Steps for Engineering Teams</h2>',
-            unsafe_allow_html=True
-        )
+        st.markdown('<b style="font-size:22px; color:#1a1a2e;">Executive Summary and Next Steps for Engineering Teams</b>', unsafe_allow_html=True)
 
         badge_color = STATUS_COLORS[top_row['classification']]
         st.markdown(
@@ -869,9 +770,9 @@ def main():
     # MODULE TAB 2: HYPOTHESIS 2 - TEMPORAL PEAK PROFILING
     # =============================================================================
     elif selected_tab == "Hypothesis 2: Temporal Peak Profiling":
-        st.header("Hypothesis 2: Temporal Peak Profiling & Network Failure Rates")
+        st.markdown('<b style="font-size:24px; color:#1a1a2e;">Hypothesis 2: Temporal Peak Profiling & Network Failure Rates</b>', unsafe_allow_html=True)
         
-        st.subheader("2. Temporal Peak Profiling & Network Failure Rates")
+        st.markdown('<b style="font-size:18px; color:#1a1a2e;">2. Temporal Peak Profiling & Network Failure Rates</b>', unsafe_allow_html=True)
         st.error("**The Business Question:**\nAt what precise minute does a road's capacity fail, how long does it take for the traffic to clear out, and how does this cycle shift on weekends?")
         st.success("**The Action:**\nWe will track TTI at 15-minute intervals to plot the exact exponential degradation and recovery curves of the transit network.")
         st.info("**Expected Outputs:**\nHourly congestion profiles, peak-hour identification tables, and weekday vs. weekend comparison dashboards.")
@@ -922,10 +823,10 @@ def main():
                 
         peak_report_df = pd.DataFrame(peak_summary_records)
 
-        st.write("### [1] Peak-Hour Identification & Operational Clearance Timeline")
+        st.markdown('<b style="font-size:18px; color:#1a1a2e;">[1] Peak-Hour Identification & Operational Clearance Timeline</b>', unsafe_allow_html=True)
         st.dataframe(peak_report_df, use_container_width=True)
 
-        st.write("### [2] Infrastructure Failure Rate Matrix: Weekday Commutes vs. Weekend Leisure Volumes")
+        st.markdown('<b style="font-size:18px; color:#1a1a2e;">[2] Infrastructure Failure Rate Matrix: Weekday Commutes vs. Weekend Leisure Volumes</b>', unsafe_allow_html=True)
         fig_bar, ax_bar = plt.subplots(figsize=(10, 4.5))
         wd_bar_data = peak_report_df[peak_report_df['day_profile'] == 'Weekday']
         we_bar_data = peak_report_df[peak_report_df['day_profile'] == 'Weekend']
@@ -944,7 +845,7 @@ def main():
         plt.tight_layout()
         st.pyplot(fig_bar)
 
-        st.write("### [3] Diurnal Velocity Degradation Tracking per Network Corridor")
+        st.markdown('<b style="font-size:18px; color:#1a1a2e;">[3] Diurnal Velocity Degradation Tracking per Network Corridor</b>', unsafe_allow_html=True)
         for corr in unique_corridors:
             corr_data = df_fetched[df_fetched['corridor_name'] == corr]
             wd_profile = corr_data[corr_data['is_weekend'] == 0].groupby('time_of_day')['travel_time_index_tti'].mean().sort_index()
@@ -981,9 +882,9 @@ def main():
     # MODULE TAB 3: HYPOTHESIS 3 - GEOMETRIC CONSTRAINTS
     # =============================================================================
     elif selected_tab == "Hypothesis 3: Geometric Constraints":
-        st.header("Hypothesis 3: Structural Choke Points & Geometric Constraints")
+        st.markdown('<b style="font-size:24px; color:#1a1a2e;">Hypothesis 3: Structural Choke Points & Geometric Constraints</b>', unsafe_allow_html=True)
         
-        st.subheader("3. Structural Choke Points & Geometric Constraints")
+        st.markdown('<b style="font-size:18px; color:#1a1a2e;">3. Structural Choke Points & Geometric Constraints</b>', unsafe_allow_html=True)
         st.error("**The Business Question:**\nAre specific infrastructure features-such as physical lane drops, poorly placed bus stops, or dense clusters of traffic signals-the primary drivers of localized congestion?")
         st.success("**The Action:**\nWe will cross-reference traffic speed data against static map layers containing intersection locations and road widths to classify whether congestion is 'Structural' (permanent design flaws) or 'Temporal' (rush-hour volume).")
         st.info("**Expected Outputs:**\nStructural vs. Temporal congestion maps, lane-drop bottleneck inventories, and signal influence impact assessments.")
@@ -1012,11 +913,11 @@ def main():
             np.where(df_struct['mean_peak_tti'] >= 1.5, 'Temporal (Volume Peak)', 'Optimal Flow Link')
         )
         
-        st.write("### [1] Infrastructure Typology Inventory Matrix")
+        st.markdown('<b style="font-size:18px; color:#1a1a2e;">[1] Infrastructure Typology Inventory Matrix</b>', unsafe_allow_html=True)
         st.dataframe(df_struct.sort_values(by='mean_peak_tti', ascending=False), use_container_width=True)
         
         # Graph 1: Signal Proximity vs Off-Peak Structural Congestion
-        st.write("### [2] Signal Influence Friction Analysis")
+        st.markdown('<b style="font-size:18px; color:#1a1a2e;">[2] Signal Influence Friction Analysis</b>', unsafe_allow_html=True)
         fig_s1, ax_s1 = plt.subplots(figsize=(10, 4.5))
         sns.scatterplot(
             data=df_struct, 
@@ -1042,7 +943,7 @@ def main():
         """)
         
         # Graph 2: Capacity Lane Drop Analysis
-        st.write("### [3] Road Width Lane Allocation Penalty Tracking")
+        st.markdown('<b style="font-size:18px; color:#1a1a2e;">[3] Road Width Lane Allocation Penalty Tracking</b>', unsafe_allow_html=True)
         fig_s2, ax_s2 = plt.subplots(figsize=(10, 4))
         sns.boxplot(data=df_struct, x='lanes', y='mean_peak_tti', color='#1f77b4', ax=ax_s2)
         ax_s2.set_xlabel("Roadway Width Profile (Total Lanes)")
@@ -1059,9 +960,9 @@ def main():
     # MODULE TAB 4: HYPOTHESIS 4 - WEATHER-DRIVEN VARIANCE
     # =============================================================================
     elif selected_tab == "Hypothesis 4: Weather-Driven Variance":
-        st.header("Hypothesis 4: Measuring Weather-Driven Environmental Variance")
+        st.markdown('<b style="font-size:24px; color:#1a1a2e;">Hypothesis 4: Measuring Weather-Driven Environmental Variance</b>', unsafe_allow_html=True)
         
-        st.subheader("4. Measuring Weather-Driven Environmental Variance")
+        st.markdown('<b style="font-size:18px; color:#1a1a2e;">4. Measuring Weather-Driven Environmental Variance</b>', unsafe_allow_html=True)
         st.error("**The Business Question:**\nExactly how much does rain degrade our transit network capacity compared to a normal dry day, and can we mathematically isolate these events?")
         st.success("**The Action:**\nBy mapping localized rainfall intensity and visibility limits directly over our descriptive traffic speed data, we will test the hypothesis that certain severe traffic spikes are purely weather anomalies.")
         st.info("**Expected Outputs:**\nRain-sensitivity slope calculations and weather-delay isolation metrics.")
@@ -1115,10 +1016,10 @@ def main():
 
         segment_report_df = pd.DataFrame(segment_weather_records).sort_values(by='delay_inflation', ascending=False).reset_index(drop=True)
 
-        st.write("### [1] Micro-Segment Sensitivity Matrix (Ranked by Weather-Delay Inflation Impact)")
+        st.markdown('<b style="font-size:18px; color:#1a1a2e;">[1] Micro-Segment Sensitivity Matrix (Ranked by Weather-Delay Inflation Impact)</b>', unsafe_allow_html=True)
         st.dataframe(segment_report_df.style.format({'dry_base_tti': '{:.2f}', 'rain_slope': '{:.4f}', 'delay_inflation': '{:.2%}'}), use_container_width=True)
 
-        st.write("### [2] Micro-Segment Co-Regression Sensitivities & Elasticity Trend Curves")
+        st.markdown('<b style="font-size:18px; color:#1a1a2e;">[2] Micro-Segment Co-Regression Sensitivities & Elasticity Trend Curves</b>', unsafe_allow_html=True)
         top_vulnerable_segments = segment_report_df.head(3)['segment_name'].tolist()
 
         for seg in top_vulnerable_segments:
@@ -1160,7 +1061,7 @@ def main():
     # MODULE TAB 5: HYPOTHESIS 5 - TIDAL FLOW ASYMMETRY
     # =============================================================================
     elif selected_tab == "Hypothesis 5: Tidal Flow Asymmetry":
-        st.header("Hypothesis 5: Directional 'Tidal Flow' & Commuter Asymmetry")
+        st.markdown('<b style="font-size:24px; color:#1a1a2e;">Hypothesis 5: Directional "Tidal Flow" & Commuter Asymmetry</b>', unsafe_allow_html=True)
         
         st.error("**The Business Question:**\nDoes traffic congestion perfectly mirror itself during morning and evening commutes, or is there a severe directional imbalance that could justify dynamic lane management (e.g., reversible lanes)?")
         st.success("**The Action:**\nWe will separate segments by their exact directional tags and compare their TTI degradation during the morning versus the evening peaks to quantify commuter asymmetry.")
@@ -1189,11 +1090,11 @@ def main():
             # Calculate the asymmetry ratio
             tidal_profile['asymmetry_coefficient'] = tidal_profile['Northbound'] / tidal_profile['Southbound']
             
-            st.write("### [1] Systemic Corridor Directional Asymmetry Registry")
+            st.markdown('<b style="font-size:18px; color:#1a1a2e;">[1] Systemic Corridor Directional Asymmetry Registry</b>', unsafe_allow_html=True)
             st.dataframe(tidal_profile, use_container_width=True)
         
             # Graph 1: Asymmetry Diurnal Variance
-            st.write("### [2] Diurnal Tidal Flow Divergence Profile")
+            st.markdown('<b style="font-size:18px; color:#1a1a2e;">[2] Diurnal Tidal Flow Divergence Profile</b>', unsafe_allow_html=True)
             fig_t1, ax_t1 = plt.subplots(figsize=(10, 4.5))
             for corr in tidal_profile['corridor_name'].unique():
                 corr_sub = tidal_profile[tidal_profile['corridor_name'] == corr].sort_values(by='derived_hour')
@@ -1215,7 +1116,7 @@ def main():
             """)
         
             # Graph 2: Dual Corridor Performance Heat Matrix
-            st.write("### [3] Comparative Directional Split Overload Matrix")
+            st.markdown('<b style="font-size:18px; color:#1a1a2e;">[3] Comparative Directional Split Overload Matrix</b>', unsafe_allow_html=True)
             fig_t2, (ax_th1, ax_th2) = plt.subplots(1, 2, figsize=(14, 5), sharey=True)
             
             heat_nb = df_fetched[df_fetched['direction_track'] == 'Northbound'].groupby(['corridor_name', 'derived_hour'])['travel_time_index_tti'].mean().unstack().fillna(1.0)
@@ -1247,9 +1148,9 @@ def main():
     # MODULE TAB 6: HYPOTHESIS 6 - COMMUTER UNCERTAINTY
     # =============================================================================
     elif selected_tab == "Hypothesis 6: Commuter Uncertainty":
-        st.header("Hypothesis 6: Travel Time Predictability & Commuter Uncertainty")
+        st.markdown('<b style="font-size:24px; color:#1a1a2e;">Hypothesis 6: Travel Time Predictability & Commuter Uncertainty</b>', unsafe_allow_html=True)
         
-        st.subheader("6. Travel Time Predictability & Commuter Uncertainty")
+        st.markdown('<b style="font-size:18px; color:#1a1a2e;">6. Travel Time Predictability & Commuter Uncertainty</b>', unsafe_allow_html=True)
         st.error("**The Business Question:**\nWhich segments are the most unpredictable and unreliable for commuters, creating the greatest need for travel-time safety margins?")
         st.success("**The Action:**\nWe will measure the daily variance and standard deviation of travel times on specific segments to generate a 'reliability score.'")
         st.info("**Expected Outputs:**\nSegment reliability rankings, travel-time uncertainty maps, and identification of high-risk commuter corridors.")
@@ -1266,11 +1167,11 @@ def main():
             bti_val=('travel_time_index_tti', lambda x: ((x.quantile(0.95) - x.mean()) / x.mean()) * 100.0)
         ).reset_index()
         
-        st.write("### [1] Fleet Transit Network Predictability Registry")
+        st.markdown('<b style="font-size:18px; color:#1a1a2e;">[1] Fleet Transit Network Predictability Registry</b>', unsafe_allow_html=True)
         st.dataframe(df_predict.sort_values(by='bti_val', ascending=False), use_container_width=True)
         
         # Graph 1: Buffer Time Index Volatility Allocation
-        st.write("### [2] Network Buffer Time Index Performance Scale")
+        st.markdown('<b style="font-size:18px; color:#1a1a2e;">[2] Network Buffer Time Index Performance Scale</b>', unsafe_allow_html=True)
         fig_p1, ax_p1 = plt.subplots(figsize=(10, 4.5))
         sns.barplot(
             data=df_predict.sort_values(by='bti_val', ascending=False).head(15),
@@ -1292,7 +1193,7 @@ def main():
         """)
         
         # Graph 2: Volatility Coefficient Distributions
-        st.write("### [3] Deviation Dispersion Mismatch Tracking")
+        st.markdown('<b style="font-size:18px; color:#1a1a2e;">[3] Deviation Dispersion Mismatch Tracking</b>', unsafe_allow_html=True)
         fig_p2, ax_p2 = plt.subplots(figsize=(10, 4))
         sns.scatterplot(
             data=df_predict,
@@ -1320,9 +1221,9 @@ def main():
     # MODULE TAB 7: HYPOTHESIS 7 - FLYOVER EXIT & UPHILL GRADIENTS
     # =============================================================================
     elif selected_tab == "Hypothesis 7: The Flyover Exit & Gradients":
-        st.header("Hypothesis 7: The 'Flyover Exit' & Uphill Gradient Penalties")
+        st.markdown('<b style="font-size:24px; color:#1a1a2e;">Hypothesis 7: The "Flyover Exit" & Uphill Gradient Penalties</b>', unsafe_allow_html=True)
         
-        st.subheader("7. The 'Flyover Exit' & Uphill Gradient Penalties (Layered Networks)")
+        st.markdown('<b style="font-size:18px; color:#1a1a2e;">7. The "Flyover Exit" & Uphill Gradient Penalties (Layered Networks)</b>', unsafe_allow_html=True)
         st.error("**The Business Question 1:** Do steep inclines permanently slow down heavy fleets?")
         st.markdown("> **Business Answer:** Yes. Uphill grades introduce an invariant physical crawl penalty that baseline operations cannot fix. Data traces confirm that micro-segments with steep climbs (>6% incline) suffer a structural TTI inflation of 0.42 to 0.45 across all operational hours. Heavy commercial fleets and buses suffer massive power-to-weight ratio loss on these ascents, dropping to crawl speeds and generating a permanent upstream queue wave.\n\n> **Real-Life Intervention:** Implement a mandatory 'Crawler Lane' policy for heavy vehicles and adjust upstream pavement markings to prevent passenger cars from becoming trapped behind low-velocity truck fleets.")
         
@@ -1371,10 +1272,10 @@ def main():
         segment_profiles['link_failure_frequency'] = segment_profiles['congested_intervals'] / segment_profiles['total_observations']
         segment_profiles = segment_profiles.sort_values(by='mean_tti', ascending=False).reset_index(drop=True)
 
-        st.write("### [1] Topographical Corridor Delay Profile (Ranked by Macro System Friction)")
+        st.markdown('<b style="font-size:18px; color:#1a1a2e;">[1] Topographical Corridor Delay Profile (Ranked by Macro System Friction)</b>', unsafe_allow_html=True)
         st.dataframe(segment_profiles[['shapefile_segment_name', 'network_layer_type', 'elevation_gradient', 'mean_tti', 'link_failure_frequency']].style.format({'elevation_gradient': '{:.1f}%', 'mean_tti': '{:.2f}', 'link_failure_frequency': '{:.2%}'}), use_container_width=True)
 
-        st.write("### [2] Macroscopic Topographical Delay Profile Matrix")
+        st.markdown('<b style="font-size:18px; color:#1a1a2e;">[2] Macroscopic Topographical Delay Profile Matrix</b>', unsafe_allow_html=True)
         fig_g1, ax_g1 = plt.subplots(figsize=(10, 4.5))
         layer_colors = {'Elevated Flyover Mainline': '#1f77b4', 'At-Grade Off-Ramp Junction': '#d62728', 
                         'Steep Incline Link': '#ff7f0e', 'Standard At-Grade Link': '#2ca02c'}
@@ -1400,7 +1301,7 @@ def main():
         plt.tight_layout()
         st.pyplot(fig_g1)
 
-        st.write("### [3] Layered Network Geometric Interaction Profiles")
+        st.markdown('<b style="font-size:18px; color:#1a1a2e;">[3] Layered Network Geometric Interaction Profiles</b>', unsafe_allow_html=True)
         mainline_df = df_fetched[df_fetched['network_layer_type'] == 'Elevated Flyover Mainline']
         offramp_df = df_fetched[df_fetched['network_layer_type'] == 'At-Grade Off-Ramp Junction']
         incline_df = df_fetched[df_fetched['network_layer_type'] == 'Steep Incline Link']
@@ -1439,9 +1340,9 @@ def main():
     # MODULE TAB 8: HYPOTHESIS 8 - SPATIAL LENGTH DILUTION BIAS
     # =============================================================================
     elif selected_tab == "Hypothesis 8: Spatial Length Dilution Bias":
-        st.header("Hypothesis 8: Spatial Slicing Accuracy & 'Length Dilution'")
+        st.markdown('<b style="font-size:24px; color:#1a1a2e;">Hypothesis 8: Spatial Slicing Accuracy & "Length Dilution"</b>', unsafe_allow_html=True)
         
-        st.subheader("Executive Framework: Hypothesis 8 Specifications")
+        st.markdown('<b style="font-size:18px; color:#1a1a2e;">Executive Framework: Hypothesis 8 Specifications</b>', unsafe_allow_html=True)
         st.error("**The Business Question:**\nDoes analyzing a long stretch of road artificially hide severe, localized traffic jams by averaging the slow speeds with fast speeds?")
         st.markdown("> **Business Answer:** Yes. Macro-corridor averaging structurally masks critical local bottlenecks through length dilution. Data validation proves that sub-1km micro-segments register extreme peak-hour TTI spikes of 2.45 to 3.10. In contrast, long stretches ($\geq 2\text{km}$) on the exact same routes report highly suppressed peak TTIs of 1.15 to 1.35. The intense delay of a 300-meter gridlock tail is mathematically erased when averaged across several kilometers of free-flowing traffic. Standard routing APIs underreport local bottleneck intensities by up to 60%.\n\n> **Real-Life Intervention:** Transition the network dashboard from 'link-averages' to 'spatial-slice profiling'. Break down monitoring segments into uniform 500-meter bins to capture the true intensity of queue tails.")
         
@@ -1491,10 +1392,10 @@ def main():
         spatial_metrics['congestion_dilution_ratio'] = spatial_metrics['max_peak_tti'] / (spatial_metrics['true_driving_distance_meters'] / 1000.0)
         spatial_metrics = spatial_metrics.sort_values(by='max_peak_tti', ascending=False).reset_index(drop=True)
 
-        st.write("### [1] Spatial Resolution Validation Matrix (Micro vs Macro Slicing Accuracy)")
+        st.markdown('<b style="font-size:18px; color:#1a1a2e;">[1] Spatial Resolution Validation Matrix (Micro vs Macro Slicing Accuracy)</b>', unsafe_allow_html=True)
         st.dataframe(spatial_metrics[['shapefile_segment_name', 'spatial_slice_type', 'true_driving_distance_meters', 'max_peak_tti', 'tti_variance']].style.format({'true_driving_distance_meters': '{:.1f}m', 'max_peak_tti': '{:.2f}', 'tti_variance': '{:.4f}'}), use_container_width=True)
 
-        st.write("### [2] Empirical Spatial Slicing Validation Dashboard Panels")
+        st.markdown('<b style="font-size:18px; color:#1a1a2e;">[2] Empirical Spatial Slicing Validation Dashboard Panels</b>', unsafe_allow_html=True)
         fig_h8, (ax_s1, ax_s2) = plt.subplots(1, 2, figsize=(16, 5))
         plt.subplots_adjust(wspace=0.25)
         
@@ -1540,9 +1441,9 @@ def main():
     # MODULE TAB 9: HYPOTHESIS 9 - TAXONOMY CLUSTERING
     # =============================================================================
     elif selected_tab == "Hypothesis 9: Unsupervised Taxonomy Clustering":
-        st.header("Hypothesis 9: Unsupervised Network Taxonomy Clustering")
+        st.markdown('<b style="font-size:24px; color:#1a1a2e;">Hypothesis 9: Unsupervised Network Taxonomy Clustering</b>', unsafe_allow_html=True)
         
-        st.subheader("9. Unsupervised Network Taxonomy Clustering")
+        st.markdown('<b style="font-size:18px; color:#1a1a2e;">9. Unsupervised Network Taxonomy Clustering</b>', unsafe_allow_html=True)
         st.error("**The Business Question:**\nHow can we classify all 137 segments into distinct behavioral groups so CUMTA can manage the network using standardized policy templates?")
         st.success("**The Action:**\nWe will feed the derived segment metrics into an unsupervised clustering algorithm (e.g., K-Means) to group roads with identical failure mechanics together.")
         st.info("**Expected Outputs:**\nNetwork taxonomy map, cluster-specific corridor profiles, and standardized intervention recommendations.")
@@ -1572,11 +1473,11 @@ def main():
             2: 'Stable Predictable Corridors'
         })
         
-        st.write("### [1] Unsupervised Machine Learning Behavioral Taxonomy Ledger")
+        st.markdown('<b style="font-size:18px; color:#1a1a2e;">[1] Unsupervised Machine Learning Behavioral Taxonomy Ledger</b>', unsafe_allow_html=True)
         st.dataframe(df_tax_base, use_container_width=True)
         
         # Graph 1: Two-Dimensional Feature Map Scatter Plot
-        st.write("### [2] Unsupervised Algorithmic Clustering Space")
+        st.markdown('<b style="font-size:18px; color:#1a1a2e;">[2] Unsupervised Algorithmic Clustering Space</b>', unsafe_allow_html=True)
         fig_c1, ax_c1 = plt.subplots(figsize=(10, 5))
         sns.scatterplot(
             data=df_tax_base,
@@ -1601,7 +1502,7 @@ def main():
         """)
         
         # Graph 2: Operational Taxonomy Centroid Breakdown
-        st.write("### [3] Behavioral Profile Core Attribute Centroids")
+        st.markdown('<b style="font-size:18px; color:#1a1a2e;">[3] Behavioral Profile Core Attribute Centroids</b>', unsafe_allow_html=True)
         fig_c2, ax_c2 = plt.subplots(figsize=(10, 4))
         df_centroids = df_tax_base.groupby('cluster_label')[['peak_tti_feat', 'vol_feat', 'offpeak_feat']].mean().stack().reset_index()
         df_centroids.columns = ['Cluster Archetype', 'Core Metric Feature Field', 'Centroid Mean Absolute Value']
@@ -1621,7 +1522,7 @@ def main():
     # MODULE TAB 10: HYPOTHESIS 10 - VOLUME VIA AQI PROXY
     # =============================================================================
     elif selected_tab == "Hypothesis 10: Traffic Volume via AQI Proxy":
-        st.header("Hypothesis 10: Estimating Traffic Volume via the Air Quality Index (AQI Proxy)")
+        st.markdown('<b style="font-size:24px; color:#1a1a2e;">Hypothesis 10: Estimating Traffic Volume via the Air Quality Index (AQI Proxy)</b>', unsafe_allow_html=True)
 
         st.error("**The Business Question:**\nSince mapping APIs do not share exact vehicle counts, how can we mathematically prove that a slowdown is caused by heavy traffic volume rather than a stalled vehicle or accident?")
         st.success("**The Action:**\nWe will poll the Google Environment API to extract localized indexes[].aqi metrics and hourly emissions projections alongside our traffic speeds.")
@@ -1646,11 +1547,11 @@ def main():
             avg_co2=('emissions_co2', 'mean')
         ).reset_index()
         
-        st.write("### [1] Macro Spatial-Temporal Environmental Proxy Alignment Ledger")
+        st.markdown('<b style="font-size:18px; color:#1a1a2e;">[1] Macro Spatial-Temporal Environmental Proxy Alignment Ledger</b>', unsafe_allow_html=True)
         st.dataframe(df_env, use_container_width=True)
         
         # Graph 1: Cross-Correlation Time Series Convergence
-        st.write("### [2] Telemetry Velocity vs Environmental Footprint Tracking")
+        st.markdown('<b style="font-size:18px; color:#1a1a2e;">[2] Telemetry Velocity vs Environmental Footprint Tracking</b>', unsafe_allow_html=True)
         fig_e1, ax_e1 = plt.subplots(figsize=(10, 4.5))
         ax_e1_twin = ax_e1.twinx()
         
@@ -1676,7 +1577,7 @@ def main():
         """)
         
         # Graph 2: Linear Regression OLS Consistency Grid
-        st.write("### [3] Ordinary Least Squares Structural Congestion Correlation Model")
+        st.markdown('<b style="font-size:18px; color:#1a1a2e;">[3] Ordinary Least Squares Structural Congestion Correlation Model</b>', unsafe_allow_html=True)
         fig_e2, ax_e2 = plt.subplots(figsize=(10, 4.5))
         sns.regplot(
             data=df_fetched.sample(min(1000, len(df_fetched)), random_state=42),
