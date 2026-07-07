@@ -18,9 +18,16 @@ st.set_page_config(
 st.markdown("""
     <style>
     .main .block-container { padding-top: 2rem; }
-    h1, h2, h3 { font-weight: 700 !important; color: #1e293b; }
+    h1, h2, h3 { font-weight: 700 !important; color: #1a1a2e !important; }
+    h1 { font-size: 2.2rem !important; }
+    h2 { font-size: 1.8rem !important; }
+    h3 { font-size: 1.4rem !important; }
     div.stButton > button:first-child {
         background-color: #1f77b4; color: white; border-radius: 6px; font-weight: bold;
+    }
+    /* Override streamlit's default light text */
+    .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4 {
+        color: #1a1a2e !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -152,18 +159,18 @@ def main():
                 font-weight: 600;
                 letter-spacing: 0.03em;
                 text-transform: uppercase;
-                color: #7a8699;
+                color: #4a5568;
                 margin-bottom: 6px;
             }
             .h1-kpi-value {
                 font-size: 26px;
                 font-weight: 700;
-                color: #1c2733;
+                color: #1a1a2e;
                 line-height: 1.15;
             }
             .h1-kpi-sub {
                 font-size: 12.5px;
-                color: #98a2b3;
+                color: #6b7a8f;
                 margin-top: 4px;
             }
             .h1-badge {
@@ -174,33 +181,40 @@ def main():
                 font-weight: 700;
             }
             .h1-section-title {
-                font-size: 20px;
+                font-size: 22px;
                 font-weight: 700;
-                color: #1c2733;
-                margin-top: 6px;
-                margin-bottom: 2px;
+                color: #1a1a2e;
+                margin-top: 8px;
+                margin-bottom: 4px;
             }
             .h1-section-sub {
-                font-size: 13.5px;
-                color: #6b7684;
-                margin-bottom: 10px;
+                font-size: 14px;
+                color: #4a5568;
+                margin-bottom: 12px;
             }
             .h1-callout {
                 background-color: #eaf2fb;
                 border-left: 4px solid #3498db;
-                padding: 12px 16px;
+                padding: 14px 18px;
                 border-radius: 6px;
-                font-size: 14px;
-                color: #1c2733;
+                font-size: 14.5px;
+                color: #1a1a2e;
                 margin-bottom: 14px;
+            }
+            /* Override any light text in this tab */
+            .h1-callout b, .h1-callout strong {
+                color: #1a1a2e !important;
+            }
+            .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4 {
+                color: #1a1a2e !important;
             }
             </style>
         """, unsafe_allow_html=True)
 
         st.markdown(
-            '<div style="font-size:26px; font-weight:800; color:#1c2733; margin-bottom:2px;">'
+            '<div style="font-size:28px; font-weight:800; color:#1a1a2e; margin-bottom:2px;">'
             'Hypothesis 1 · Systemic Bottleneck Localization</div>'
-            '<div style="font-size:14.5px; color:#6b7684; margin-bottom:14px;">'
+            '<div style="font-size:15px; color:#4a5568; margin-bottom:14px;">'
             'True root-cause bottlenecks vs. spillover / victim traffic, ranked for engineering triage</div>',
             unsafe_allow_html=True
         )
@@ -530,7 +544,7 @@ def main():
             'Avg onset time': '{:.1f}:00', 'MCBI score': '{:.4f}'
         }).set_properties(**{'font-size': '13px'}) \
          .set_table_styles([
-             {'selector': 'th', 'props': [('background-color', '#1c2733'), ('color', 'white'),
+             {'selector': 'th', 'props': [('background-color', '#1a1a2e'), ('color', 'white'),
                                            ('font-weight', '600'), ('font-size', '12.5px'),
                                            ('text-transform', 'uppercase'), ('letter-spacing', '0.02em')]}
          ])
@@ -548,7 +562,7 @@ def main():
             {'mean_tti': '{:.3f}', 'max_tti': '{:.2f}'}
         ).background_gradient(subset=['mean_tti'], cmap='Reds') \
          .set_table_styles([
-             {'selector': 'th', 'props': [('background-color', '#1c2733'), ('color', 'white'),
+             {'selector': 'th', 'props': [('background-color', '#1a1a2e'), ('color', 'white'),
                                            ('font-weight', '600'), ('font-size', '12.5px'),
                                            ('text-transform', 'uppercase')]}
          ])
@@ -593,7 +607,7 @@ def main():
 
         ax1.set_ylabel("Weighted contribution to MCBI score", fontweight='bold', fontsize=9)
         ax1.set_xlabel("Segment", fontweight='bold', fontsize=9)
-        ax1.set_title("What is driving each segment's priority score", fontsize=11, fontweight='bold', pad=12)
+        ax1.set_title("What is driving each segment's priority score", fontsize=11, fontweight='bold', pad=12, color='#1a1a2e')
         ax1.set_ylim(0, 1.05)
         ax1.grid(axis='y', linestyle=':', alpha=0.4)
         ax1.legend(loc='upper right', fontsize=8.5, frameon=True, facecolor='white', edgecolor='none')
@@ -631,14 +645,14 @@ def main():
                 max_height = corr_metrics['pct_time_congested'].max()
                 for bar, row in zip(bars, corr_metrics.itertuples()):
                     ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + max_height * 0.03,
-                            f"{row.mean_onset_hour:.1f}:00", ha='center', fontsize=8, color='#444444')
+                            f"{row.mean_onset_hour:.1f}:00", ha='center', fontsize=8, color='#4a5568')
 
                 ax.set_xticks(x_pos)
                 ax.set_xticklabels(corr_metrics['segment_id'].str.replace(f"{corr} - ", "", regex=False),
                                    rotation=15, ha='right', fontsize=8)
-                ax.set_ylabel("Congestion density (%)", fontweight='bold', fontsize=9)
-                ax.set_xlabel("Segment, ordered by physical position along the corridor", fontsize=9, fontweight='bold')
-                ax.set_title(f"Propagation profile: {corr}", fontsize=11, fontweight='bold', pad=10)
+                ax.set_ylabel("Congestion density (%)", fontweight='bold', fontsize=9, color='#1a1a2e')
+                ax.set_xlabel("Segment, ordered by physical position along the corridor", fontsize=9, fontweight='bold', color='#1a1a2e')
+                ax.set_title(f"Propagation profile: {corr}", fontsize=11, fontweight='bold', pad=10, color='#1a1a2e')
                 ax.set_ylim(0, max_height * 1.25 if max_height > 0 else 1)
                 ax.grid(axis='y', linestyle=':', alpha=0.35, zorder=0)
                 _style_axes(ax)
@@ -683,16 +697,16 @@ def main():
             badge_color = STATUS_COLORS[status]
             ax_trend.set_title(
                 f"Rank {rank + 1}: {row['segment_id']}   ·   {status}",
-                fontsize=14, fontweight='bold', pad=12, color='#1c2733'
+                fontsize=14, fontweight='bold', pad=12, color='#1a1a2e'
             )
             ax_trend.title.set_bbox(dict(facecolor='none', edgecolor='none'))
-            ax_trend.set_xlabel("Hour of day", fontsize=11, fontweight='bold')
-            ax_trend.set_ylabel("TTI", fontsize=11, fontweight='bold')
+            ax_trend.set_xlabel("Hour of day", fontsize=11, fontweight='bold', color='#1a1a2e')
+            ax_trend.set_ylabel("TTI", fontsize=11, fontweight='bold', color='#1a1a2e')
             ax_trend.set_xlim(0, 23)
             ax_trend.set_xticks(range(0, 24, 2))
             ax_trend.grid(True, linestyle=':', alpha=0.5)
             ax_trend.legend(loc='upper left', fontsize=10.5, frameon=True, facecolor='white')
-            ax_trend.tick_params(axis='both', labelsize=10.5)
+            ax_trend.tick_params(axis='both', labelsize=10.5, colors='#4a5568')
             # Thin colored status strip on the left edge of each panel for quick scanning
             ax_trend.axvspan(-0.4, 0, color=badge_color, alpha=0.9, zorder=5)
             _style_axes(ax_trend)
@@ -725,16 +739,16 @@ def main():
                         ax4.scatter(rc_hourly.index, rc_hourly.values, color='#e74c3c', zorder=6, s=130,
                                     marker='X', edgecolors='white', linewidths=1.0, label=f"Verified breakdown ({seg_label})")
 
-                ax4.set_title(f"Corridor: {corr}", fontsize=11, fontweight='bold', pad=12)
-                ax4.set_xlabel("Hour of day", fontweight='bold', fontsize=9)
-                ax4.set_ylabel("Mean TTI", fontweight='bold', fontsize=9)
+                ax4.set_title(f"Corridor: {corr}", fontsize=11, fontweight='bold', pad=12, color='#1a1a2e')
+                ax4.set_xlabel("Hour of day", fontweight='bold', fontsize=9, color='#1a1a2e')
+                ax4.set_ylabel("Mean TTI", fontweight='bold', fontsize=9, color='#1a1a2e')
                 ax4.set_xlim(0, 23)
                 ax4.set_xticks(range(0, 24, 2))
                 ax4.grid(True, linestyle=':', alpha=0.4)
                 ax4.legend(loc='upper right', fontsize=8.5, frameon=True, facecolor='white')
                 _style_axes(ax4)
-                plt.xticks(fontsize=8)
-                plt.yticks(fontsize=8)
+                plt.xticks(fontsize=8, color='#4a5568')
+                plt.yticks(fontsize=8, color='#4a5568')
                 plt.tight_layout()
                 st.pyplot(fig4)
 
@@ -767,7 +781,7 @@ def main():
         for _, row in top_5_segments.iterrows():
             dot_color = STATUS_COLORS[row['classification']]
             st.markdown(
-                f'<span style="color:{dot_color};">●</span> `{row["segment_id"]}` — '
+                f'<span style="color:{dot_color}; font-weight:bold;">●</span> `{row["segment_id"]}` — '
                 f'{row["classification"]} ({row["priority_tier"]} priority): {row["recommended_action"]}',
                 unsafe_allow_html=True
             )
