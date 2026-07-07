@@ -45,6 +45,118 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =============================================================================
+# SHARED PROFESSIONAL STYLING HELPERS - Atralita
+# Used by Hypotheses 1, 2, 4, 7 and 8 so every "engineering-grade" tab shares
+# the same visual language: KPI cards, callouts, section titles and clean
+# matplotlib axes. Factored out here once instead of re-declared per tab.
+# =============================================================================
+STATUS_COLORS = {
+    "Confirmed root cause": "#e74c3c",              # red    — act now
+    "Likely spillover / victim": "#f1c40f",          # yellow — caution, don't touch this segment
+    "Untestable — no adjacent sensor": "#3498db",    # blue   — needs more data
+    "No structural issue detected": "#2ecc71",       # green  — no action needed
+}
+STATUS_STYLE = {
+    "Confirmed root cause": "background-color:#fdecea; color:#c0392b; font-weight:bold;",
+    "Likely spillover / victim": "background-color:#fef9e7; color:#b7950b; font-weight:bold;",
+    "Untestable — no adjacent sensor": "background-color:#eaf2fb; color:#2874a6; font-weight:bold;",
+    "No structural issue detected": "background-color:#eafaf1; color:#229954; font-weight:bold;",
+}
+
+
+def inject_professional_style():
+    """Shared card / callout / heading CSS for the five 'engineering-grade' tabs."""
+    st.markdown("""
+        <style>
+        .h1-kpi-card {
+            background: linear-gradient(145deg, #1a1a2e, #2d2d44);
+            border: 1px solid #3d3d5c;
+            border-radius: 12px;
+            padding: 18px 20px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+            height: 100%;
+        }
+        .h1-kpi-label {
+            font-size: 12.5px; font-weight: 600; letter-spacing: 0.03em;
+            text-transform: uppercase; color: #a0aec0; margin-bottom: 6px;
+        }
+        .h1-kpi-value { font-size: 26px; font-weight: 700; color: #ffffff; line-height: 1.15; }
+        .h1-kpi-sub { font-size: 12.5px; color: #a0aec0; margin-top: 4px; }
+        .h1-section-title {
+            font-size: 22px !important; font-weight: 700 !important; color: #ffffff !important;
+            margin-top: 8px !important; margin-bottom: 4px !important; opacity: 1 !important;
+        }
+        .h1-section-sub { font-size: 14px; color: #a0aec0; margin-bottom: 12px; }
+        .h1-callout {
+            background-color: #2d2d44; border-left: 4px solid #3498db; padding: 14px 18px;
+            border-radius: 6px; font-size: 14.5px; color: #ffffff; margin-bottom: 14px;
+        }
+        .h1-callout b, .h1-callout strong { color: #ffffff !important; }
+        .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4,
+        div[data-testid="stMarkdown"] h1, div[data-testid="stMarkdown"] h2,
+        div[data-testid="stMarkdown"] h3, div[data-testid="stMarkdown"] h4 {
+            color: #ffffff !important; font-weight: 700 !important; opacity: 1 !important;
+        }
+        .stMarkdown, .stMarkdown p, .stMarkdown li, .stMarkdown div { color: #ffffff !important; }
+        </style>
+    """, unsafe_allow_html=True)
+
+
+def apply_pro_plot_style():
+    plt.rcParams.update({
+        "font.family": "DejaVu Sans",
+        "axes.edgecolor": "#d5dae1",
+        "axes.linewidth": 0.9,
+        "axes.titlepad": 10,
+        "figure.facecolor": "white",
+        "axes.facecolor": "white",
+        "legend.frameon": True,
+    })
+
+
+def style_axes(ax):
+    """Strip chart junk so every figure reads as a clean, professional exhibit."""
+    for spine in ["top", "right"]:
+        ax.spines[spine].set_visible(False)
+    ax.spines["left"].set_color("#d5dae1")
+    ax.spines["bottom"].set_color("#d5dae1")
+    ax.tick_params(colors="#4a5568")
+    return ax
+
+
+def render_page_header(title_html, subtitle_text):
+    st.markdown(
+        f'<h1 style="font-size:28px; font-weight:800; color:#ffffff; margin-bottom:2px; opacity:1 !important;">'
+        f'{title_html}</h1>'
+        f'<div style="font-size:15px; color:#a0aec0; margin-bottom:14px;">{subtitle_text}</div>',
+        unsafe_allow_html=True
+    )
+
+
+def section_title(text):
+    st.markdown(f'<h2 class="h1-section-title">{text}</h2>', unsafe_allow_html=True)
+
+
+def render_callout(html, border_color="#3498db"):
+    st.markdown(
+        f'<div class="h1-callout" style="border-left-color:{border_color};">{html}</div>',
+        unsafe_allow_html=True
+    )
+
+
+def render_kpi_row(kpi_defs):
+    cols = st.columns(len(kpi_defs))
+    for col, (label, value, color, sub) in zip(cols, kpi_defs):
+        with col:
+            st.markdown(
+                f'<div class="h1-kpi-card">'
+                f'<div class="h1-kpi-label">{label}</div>'
+                f'<div class="h1-kpi-value" style="color:{color};">{value}</div>'
+                f'<div class="h1-kpi-sub">{sub}</div>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
+# =============================================================================
 # 2. MASTER ENGINE INTERFACE CONTROLLER
 # =============================================================================
 def main():
