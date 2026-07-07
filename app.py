@@ -714,7 +714,7 @@ def main():
                 unsafe_allow_html=True
             )
 
-    # =============================================================================
+   # =============================================================================
     # MODULE TAB 2: HYPOTHESIS 2 - TEMPORAL PEAK PROFILING
     # =============================================================================
     elif selected_tab == "Hypothesis 2: Temporal Peak Profiling":
@@ -725,18 +725,18 @@ def main():
         st.success("**The Action:**\nWe will track TTI at 15-minute intervals to plot the exact exponential degradation and recovery curves of the transit network.")
         st.info("**Expected Outputs:**\nHourly congestion profiles, peak-hour identification tables, and weekday vs. weekend comparison dashboards.")
         st.write("---")
-
+ 
         if 'execution_timestamp' in df_fetched.columns:
             df_fetched['time_of_day'] = df_fetched['execution_timestamp'].dt.strftime('%H:%M')
         else:
             df_fetched['time_of_day'] = df_fetched['derived_hour'].astype(str).str.zfill(2) + ":00"
-
+ 
         df_fetched['failure_threshold'] = df_fetched.groupby('corridor_name')['travel_time_index_tti'].transform(lambda x: x.quantile(0.90))
         df_fetched['is_failed'] = df_fetched['travel_time_index_tti'] > df_fetched['failure_threshold']
         
         if 'is_weekend' not in df_fetched.columns:
             df_fetched['is_weekend'] = 0
-
+ 
         unique_corridors = df_fetched['corridor_name'].unique()
         peak_summary_records = []
         
@@ -770,10 +770,11 @@ def main():
                 })
                 
         peak_report_df = pd.DataFrame(peak_summary_records)
-
+ 
         st.markdown('<h2 style="color:#ffffff; font-weight:600; font-size:18px;">[1] Peak-Hour Identification & Operational Clearance Timeline</h2>', unsafe_allow_html=True)
         st.dataframe(peak_report_df, use_container_width=True)
-
+        st.caption("Footnote: 'failure minute' is the 15-minute interval with the highest mean TTI for that corridor/day-type; clearance duration is how long TTI stays in a failed state (>25% of segments over threshold) after that peak.")
+ 
         st.markdown('<h2 style="color:#ffffff; font-weight:600; font-size:18px;">[2] Infrastructure Failure Rate Matrix: Weekday Commutes vs. Weekend Leisure Volumes</h2>', unsafe_allow_html=True)
         fig_bar, ax_bar = plt.subplots(figsize=(10, 4.5))
         wd_bar_data = peak_report_df[peak_report_df['day_profile'] == 'Weekday']
@@ -792,8 +793,29 @@ def main():
         ax_bar.legend(loc='upper right')
         plt.tight_layout()
         st.pyplot(fig_bar)
-
-        st.markdown('<h2 style="color:#ffffff; font-weight:600; font-size:18px;">[3] Diurnal Velocity Degradation Tracking per Network Corridor</h2>', unsafe_allow_html=True)
+        st.caption("Footnote: failure % is the share of all observed intervals where a corridor's TTI exceeded its own 90th-percentile threshold.")
+ 
+        st.markdown('<h2 style="color:#ffffff; font-weight:600; font-size:18px;">[3] Operational Time-Window Heatmap</h2>', unsafe_allow_html=True)
+        st.caption("Where and when the network actually fails: mean TTI by corridor and hour of day, split weekday vs. weekend.")
+        heat_wd = df_fetched[df_fetched['is_weekend'] == 0].groupby(['corridor_name', 'derived_hour'])['travel_time_index_tti'].mean().unstack().reindex(columns=range(0, 24)).fillna(1.0)
+        heat_we = df_fetched[df_fetched['is_weekend'] == 1].groupby(['corridor_name', 'derived_hour'])['travel_time_index_tti'].mean().unstack().reindex(columns=range(0, 24)).fillna(1.0)
+ 
+        fig_heat, (ax_hwd, ax_hwe) = plt.subplots(1, 2, figsize=(15, 4.8), sharey=True)
+        sns.heatmap(heat_wd, cmap='YlOrRd', ax=ax_hwd, cbar_kws={'label': 'Mean TTI'}, vmin=1.0, vmax=max(heat_wd.values.max(), heat_we.values.max(), 2.0))
+        ax_hwd.set_title("Weekday Operating Window", fontweight='bold', fontsize=10)
+        ax_hwd.set_xlabel("Hour of Day")
+        ax_hwd.set_ylabel("Corridor")
+ 
+        if not heat_we.empty:
+            sns.heatmap(heat_we, cmap='YlOrRd', ax=ax_hwe, cbar_kws={'label': 'Mean TTI'}, vmin=1.0, vmax=max(heat_wd.values.max(), heat_we.values.max(), 2.0))
+            ax_hwe.set_title("Weekend Operating Window", fontweight='bold', fontsize=10)
+            ax_hwe.set_xlabel("Hour of Day")
+            ax_hwe.set_ylabel("")
+        plt.tight_layout()
+        st.pyplot(fig_heat)
+        st.caption("Footnote: darker cells mark the specific hour-and-corridor combinations where capacity failure concentrates, giving operations teams a direct read on which time windows need active management on each corridor.")
+ 
+        st.markdown('<h2 style="color:#ffffff; font-weight:600; font-size:18px;">[4] Diurnal Velocity Degradation Tracking per Network Corridor</h2>', unsafe_allow_html=True)
         for corr in unique_corridors:
             corr_data = df_fetched[df_fetched['corridor_name'] == corr]
             wd_profile = corr_data[corr_data['is_weekend'] == 0].groupby('time_of_day')['travel_time_index_tti'].mean().sort_index()
@@ -825,7 +847,7 @@ def main():
                 
             st.caption(f"Network Corridor Workspace Profile: {corr.upper()}")
             st.pyplot(fig_line)
-        
+            st.caption("Footnote: the dotted red line is this corridor's own 90th-percentile capacity boundary; sustained crossings above it indicate the corridor is operating in a failed state, not just a brief spike.")
 
 
     # =============================================================================
