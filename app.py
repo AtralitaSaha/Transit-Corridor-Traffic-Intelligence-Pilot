@@ -18,16 +18,8 @@ st.set_page_config(
 st.markdown("""
     <style>
     .main .block-container { padding-top: 2rem; }
-    h1, h2, h3 { font-weight: 700 !important; color: #1a1a2e !important; }
-    h1 { font-size: 2.2rem !important; }
-    h2 { font-size: 1.8rem !important; }
-    h3 { font-size: 1.4rem !important; }
     div.stButton > button:first-child {
         background-color: #1f77b4; color: white; border-radius: 6px; font-weight: bold;
-    }
-    /* Override streamlit's default light text */
-    .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4 {
-        color: #1a1a2e !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -173,17 +165,10 @@ def main():
                 color: #6b7a8f;
                 margin-top: 4px;
             }
-            .h1-badge {
-                display: inline-block;
-                padding: 3px 10px;
-                border-radius: 999px;
-                font-size: 12px;
-                font-weight: 700;
-            }
             .h1-section-title {
                 font-size: 22px;
                 font-weight: 700;
-                color: #1a1a2e;
+                color: #1a1a2e !important;
                 margin-top: 8px;
                 margin-bottom: 4px;
             }
@@ -201,16 +186,20 @@ def main():
                 color: #1a1a2e;
                 margin-bottom: 14px;
             }
-            /* Override any light text in this tab */
             .h1-callout b, .h1-callout strong {
                 color: #1a1a2e !important;
             }
+            /* Force dark headings */
             .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4 {
+                color: #1a1a2e !important;
+            }
+            h1, h2, h3, h4, h5, h6 {
                 color: #1a1a2e !important;
             }
             </style>
         """, unsafe_allow_html=True)
 
+        # Use HTML for main heading to ensure dark color
         st.markdown(
             '<div style="font-size:28px; font-weight:800; color:#1a1a2e; margin-bottom:2px;">'
             'Hypothesis 1 · Systemic Bottleneck Localization</div>'
@@ -256,7 +245,7 @@ def main():
             return ax
 
         # ==============================================================================
-        # 1. BUSINESS QUESTION
+        # 1. BUSINESS QUESTION - Using HTML for dark headings
         # ==============================================================================
         st.markdown('<div class="h1-section-title">Business Question</div>', unsafe_allow_html=True)
         st.markdown(
@@ -605,8 +594,8 @@ def main():
             ax1.bar(labels, decomp_top5[col], bottom=bottom, label=label, color=color, edgecolor='white', linewidth=0.6)
             bottom += decomp_top5[col].values
 
-        ax1.set_ylabel("Weighted contribution to MCBI score", fontweight='bold', fontsize=9)
-        ax1.set_xlabel("Segment", fontweight='bold', fontsize=9)
+        ax1.set_ylabel("Weighted contribution to MCBI score", fontweight='bold', fontsize=9, color='#1a1a2e')
+        ax1.set_xlabel("Segment", fontweight='bold', fontsize=9, color='#1a1a2e')
         ax1.set_title("What is driving each segment's priority score", fontsize=11, fontweight='bold', pad=12, color='#1a1a2e')
         ax1.set_ylim(0, 1.05)
         ax1.grid(axis='y', linestyle=':', alpha=0.4)
