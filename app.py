@@ -8,17 +8,6 @@ import traceback
 import folium
 from streamlit_folium import st_folium
 
-# Try to import sklearn with graceful fallback
-try:
-    from sklearn.model_selection import train_test_split
-    from sklearn.preprocessing import StandardScaler
-    from sklearn.linear_model import LogisticRegression
-    from sklearn.metrics import accuracy_score, roc_auc_score
-    SKLEARN_AVAILABLE = True
-except ImportError:
-    SKLEARN_AVAILABLE = False
-    st.warning(" scikit-learn is not installed. Machine learning features will be disabled. Install with: pip install scikit-learn")
-
 
 # 1. Page Configuration & Professional Engineering Styling Enforcements
 st.set_page_config(
@@ -833,10 +822,10 @@ def main():
         st.write("---")
         section_title("Machine Learning Cross-Check: Predicted Breakdown Risk")
         st.markdown(
-            '<div class="h1-section-sub">A scikit-learn logistic regression trained on the full network\'s history '
-            'predicts the probability that a segment will be congested in the <b>next interval</b>, given its '
-            'current state — an independent, data-driven second opinion on the rule-based classification above, '
-            'and a genuine short-horizon forecast, not a replacement for the rule-based test.</div>',
+            '<div class="h1-section-sub">A logistic regression trained on the full network\'s history predicts the '
+            'probability that a segment will be congested in the next interval, given its current state — an '
+            'independent, data-driven second opinion on the rule-based classification above, not a replacement for '
+            'it. Built from scratch with NumPy, so it runs with no scikit-learn dependency.</div>',
             unsafe_allow_html=True
         )
  
@@ -858,33 +847,51 @@ def main():
                            'Hour (sin)', 'Hour (cos)', 'Historical congestion rate']
  
         if len(model_df) >= 50 and model_df['target'].nunique() == 2:
-            X = model_df[feature_cols].values.astype(float)
-            y = model_df['target'].values.astype(int)
+            X_raw = model_df[feature_cols].values.astype(float)
+            y = model_df['target'].values.astype(float)
  
-            X_train, X_test, y_train, y_test = train_test_split(
-                X, y, test_size=0.3, random_state=7, stratify=y
-            )
+            feat_mean = X_raw.mean(axis=0)
+            feat_std = X_raw.std(axis=0)
+            feat_std[feat_std == 0] = 1.0
+            X_scaled = (X_raw - feat_mean) / feat_std
  
-            scaler = StandardScaler()
-            X_train_scaled = scaler.fit_transform(X_train)
-            X_test_scaled = scaler.transform(X_test)
-            X_all_scaled = scaler.transform(X)
+            rng = np.random.RandomState(7)
+            shuffle_idx = rng.permutation(len(X_scaled))
+            split = int(len(X_scaled) * 0.7)
+            train_idx, test_idx = shuffle_idx[:split], shuffle_idx[split:]
+            X_train, X_test = X_scaled[train_idx], X_scaled[test_idx]
+            y_train, y_test = y[train_idx], y[test_idx]
  
-            clf = LogisticRegression(max_iter=1000, random_state=7)
-            clf.fit(X_train_scaled, y_train)
+            def _sigmoid(z):
+                return 1.0 / (1.0 + np.exp(-np.clip(z, -30, 30)))
  
-            proba_test = clf.predict_proba(X_test_scaled)[:, 1]
-            proba_all = clf.predict_proba(X_all_scaled)[:, 1]
-            preds_test = clf.predict(X_test_scaled)
+            Xb_train = np.hstack([np.ones((len(X_train), 1)), X_train])
+            weights = np.zeros(Xb_train.shape[1])
+            lr, epochs = 0.2, 500
+            for _ in range(epochs):
+                preds = _sigmoid(Xb_train @ weights)
+                grad = Xb_train.T @ (preds - y_train) / len(y_train)
+                weights -= lr * grad
  
-            acc = accuracy_score(y_test, preds_test)
-            auc = roc_auc_score(y_test, proba_test) if len(np.unique(y_test)) == 2 else np.nan
-            coefs = clf.coef_[0]
+            Xb_test = np.hstack([np.ones((len(X_test), 1)), X_test])
+            proba_test = _sigmoid(Xb_test @ weights)
+            Xb_all = np.hstack([np.ones((len(X_scaled), 1)), X_scaled])
+            proba_all = _sigmoid(Xb_all @ weights)
+            coefs = weights[1:]
+            acc = float(((proba_test >= 0.5).astype(int) == y_test).mean())
+ 
+            pos = proba_test[y_test == 1]
+            neg = proba_test[y_test == 0]
+            if len(pos) > 0 and len(neg) > 0:
+                ranks = pd.Series(np.concatenate([pos, neg])).rank().values
+                auc = (ranks[:len(pos)].sum() - len(pos) * (len(pos) + 1) / 2) / (len(pos) * len(neg))
+            else:
+                auc = np.nan
  
             model_df['ml_risk_score'] = proba_all
  
             kpi_ml = [
-                ("Model", "Logistic regression (scikit-learn)", "#3498db", "Trained on full network history"),
+                ("Model", "Logistic regression (NumPy)", "#3498db", "Trained on full network history"),
                 ("Test accuracy", f"{acc*100:.1f}%", "#2ecc71", "Held-out 30% of intervals"),
                 ("Test AUC", f"{auc:.3f}" if pd.notna(auc) else "N/A", "#f1c40f", "Ranking quality of risk scores"),
                 ("Intervals modeled", f"{len(model_df):,}", "#e74c3c", "Across every corridor"),
@@ -925,7 +932,7 @@ def main():
                 "look — it means the model sees a recurring pattern the fixed threshold rule may be missing."
             )
         else:
-            st.info("Not enough labeled intervals (or only one outcome class present) in this dataset yet to train a reliable model.")
+            st.info("Not enough labeled intervals (or only one outcome class present) in this dataset yet to train a reliable model."
  
         # ==============================================================================
         # 10. EXECUTIVE SUMMARY & ENGINEERING NEXT STEPS
