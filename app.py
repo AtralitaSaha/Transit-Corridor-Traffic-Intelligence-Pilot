@@ -5,6 +5,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import streamlit as st
 import traceback
+import folium
+from streamlit_folium import st_folium
 
 # 1. Page Configuration & Professional Engineering Styling Enforcements
 st.set_page_config(
