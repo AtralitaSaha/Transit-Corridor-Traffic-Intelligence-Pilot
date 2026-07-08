@@ -275,6 +275,7 @@ def main():
             "True root-cause bottlenecks vs. spillover / victim traffic, ranked for engineering triage"
         )
  
+       
         # ==============================================================================
         # 1. BUSINESS QUESTION
         # ==============================================================================
@@ -302,7 +303,12 @@ def main():
             "**untestable** (no adjacent sensor to compare against), or **no structural issue detected**. A segment "
             "only earns \"confirmed root cause\" after **at least 2 independently verified breakdown events** — a "
             "single one-off spike is treated as noise, not proof of a structural fault, which is what previously let "
-            "almost every segment get lumped into the same bucket even though their priority scores clearly differed."
+            "almost every segment get lumped into the same bucket even though their priority scores clearly differed. "
+            "Upstream/downstream comparisons are also now scoped **within a single direction of travel** — a corridor "
+            "carrying both Northbound and Southbound segments is split into two independent one-way chains before "
+            "any segment is compared to its neighbor, since a Northbound queue physically cannot spill into a "
+            "Southbound segment. Every segment on the network is still ranked together on one list, as the business "
+            "question requires — only the upstream test itself is now direction-aware."
         )
         render_callout(
             "📡 <b>What \"Untestable\" means:</b> the root-cause vs. spillover test requires comparing a segment to "
@@ -376,6 +382,29 @@ def main():
         if 'is_weekend' not in df_analyzed.columns:
             df_analyzed['is_weekend'] = 0
  
+        # FIX ("both-ways" bug): a corridor can carry BOTH Northbound and Southbound
+        # segments. Sorting purely by sequence_order previously treated these as one
+        # single upstream->downstream chain, so a segment could get compared against
+        # a neighbor travelling the opposite direction — physically impossible for a
+        # real queue to spill into. Each corridor is now split into independent
+        # one-way chains by direction before any upstream/downstream test runs.
+        if 'direction_track' not in df_analyzed.columns:
+            df_analyzed['direction_track'] = np.where(
+                df_analyzed['shapefile_segment_name'].str.contains('001|003|005|018'), 'Northbound', 'Southbound'
+            )
+        else:
+            df_analyzed['direction_track'] = df_analyzed['direction_track'].astype(str).str.upper().str.strip()
+            direction_mapping = {
+                'NB': 'Northbound', 'N': 'Northbound', 'NORTH': 'Northbound', 'NORTHBOUND': 'Northbound',
+                'SB': 'Southbound', 'S': 'Southbound', 'SOUTH': 'Southbound', 'SOUTHBOUND': 'Southbound',
+                'INBOUND': 'Northbound', 'OUTBOUND': 'Southbound'
+            }
+            df_analyzed['direction_track'] = df_analyzed['direction_track'].map(direction_mapping).fillna('Northbound')
+ 
+        df_analyzed = df_analyzed.sort_values(
+            by=['corridor_name', 'direction_track', 'execution_timestamp', 'sequence_order']
+        ).reset_index(drop=True)
+ 
         # ==============================================================================
         # 3. CORE COMPUTATION
         # ==============================================================================
@@ -388,14 +417,17 @@ def main():
         df_analyzed['congestion_threshold'] = congestion_bounds
         df_analyzed['is_congested'] = df_analyzed['travel_time_index_tti'] > congestion_bounds
  
-        seg_count_per_corridor = df_analyzed.groupby('corridor_name')['segment_uid'].transform('nunique')
+        # multi_segment_corridor is now evaluated per (corridor, direction) pair —
+        # a corridor with 1 NB segment and 1 SB segment has no upstream neighbor in
+        # either direction, so it should be untestable, not treated as a 2-segment chain.
+        seg_count_per_corridor = df_analyzed.groupby(['corridor_name', 'direction_track'])['segment_uid'].transform('nunique')
         df_analyzed['multi_segment_corridor'] = seg_count_per_corridor > 1
  
         df_analyzed['upstream_is_congested'] = df_analyzed.groupby(
-            ['corridor_name', 'execution_timestamp']
+            ['corridor_name', 'direction_track', 'execution_timestamp']
         )['is_congested'].shift(1)
         df_analyzed['next_interval_congested'] = df_analyzed.groupby(
-            ['corridor_name', 'segment_uid']
+            ['corridor_name', 'direction_track', 'segment_uid']
         )['is_congested'].shift(-1)
  
         df_analyzed['root_cause_event'] = np.where(
@@ -424,7 +456,7 @@ def main():
             avg_onset = pd.DataFrame(columns=['segment_uid', 'mean_onset_hour'])
  
         metrics = df_analyzed.groupby(
-            ['segment_uid', 'corridor_name', 'shapefile_segment_name', 'multi_segment_corridor']
+            ['segment_uid', 'corridor_name', 'direction_track', 'shapefile_segment_name', 'multi_segment_corridor']
         ).agg(
             p90_tti=('travel_time_index_tti', lambda x: x.quantile(0.90)),
             mean_tti=('travel_time_index_tti', 'mean'),
@@ -482,11 +514,13 @@ def main():
  
         metrics['classification'] = metrics.apply(_classify, axis=1)
  
-        # ----- Segment-level ID, e.g. "Corridor B - Segment 003" -----
-        metrics['corridor_position'] = metrics.groupby('corridor_name')['mean_sequence_order'] \
+        # ----- Segment-level ID, e.g. "Corridor B (Northbound) - Segment 003" -----
+        # Position is now ranked within (corridor, direction) so it reflects true
+        # physical order along a single one-way chain, not a mixed bidirectional one.
+        metrics['corridor_position'] = metrics.groupby(['corridor_name', 'direction_track'])['mean_sequence_order'] \
             .rank(method='first').astype(int)
         metrics['segment_id'] = metrics.apply(
-            lambda r: f"{r['corridor_name']} - Segment {r['corridor_position']:03d}", axis=1
+            lambda r: f"{r['corridor_name']} ({r['direction_track']}) - Segment {r['corridor_position']:03d}", axis=1
         )
  
         # ----- Priority tier, for quick triage -----
@@ -579,8 +613,8 @@ def main():
         st.dataframe(styled_df, use_container_width=True)
  
         st.write("---")
-        section_title("Corridor-Level Summary")
-        corridor_rankings = df_analyzed.groupby('corridor_name').agg(
+        section_title("Corridor & Direction-Level Summary")
+        corridor_rankings = df_analyzed.groupby(['corridor_name', 'direction_track']).agg(
             mean_tti=('travel_time_index_tti', 'mean'),
             max_tti=('travel_time_index_tti', 'max'),
             segments_monitored=('segment_uid', 'nunique'),
@@ -596,8 +630,8 @@ def main():
          ])
         st.dataframe(corridor_styled, use_container_width=True)
         st.caption(
-            "Corridors with only one monitored segment have no adjacent sensor to compare against, so their segments "
-            "are always classified as untestable rather than clear."
+            "Corridor/direction pairs with only one monitored segment have no adjacent sensor to compare against, so "
+            "their segments are always classified as untestable rather than clear."
         )
  
         # ==============================================================================
@@ -660,14 +694,28 @@ def main():
             unsafe_allow_html=True
         )
  
-        multi_corridors = metrics.loc[metrics['multi_segment_corridor'], 'corridor_name'].unique()
+        # Loop over (corridor, direction) pairs rather than corridor alone, so a
+        # corridor with both NB and SB segments gets one cascade chart per direction
+        # instead of merging two opposite-flow chains into a single misleading one.
+        multi_pairs = (
+            metrics.loc[metrics['multi_segment_corridor'], ['corridor_name', 'direction_track']]
+            .drop_duplicates()
+            .sort_values(['corridor_name', 'direction_track'])
+            .values.tolist()
+        )
  
-        if len(multi_corridors) > 0:
-            for corr in multi_corridors:
-                corr_analyzed = df_analyzed[df_analyzed['corridor_name'] == corr]
-                corr_metrics_sorted = metrics[metrics['corridor_name'] == corr].sort_values('mean_sequence_order')
+        if len(multi_pairs) > 0:
+            for corr, direction in multi_pairs:
+                corr_analyzed = df_analyzed[
+                    (df_analyzed['corridor_name'] == corr) & (df_analyzed['direction_track'] == direction)
+                ]
+                corr_metrics_sorted = metrics[
+                    (metrics['corridor_name'] == corr) & (metrics['direction_track'] == direction)
+                ].sort_values('mean_sequence_order')
                 seg_order = corr_metrics_sorted['segment_uid'].tolist()
-                seg_labels = corr_metrics_sorted['segment_id'].str.replace(f"{corr} - ", "", regex=False).tolist()
+                seg_labels = corr_metrics_sorted['segment_id'].str.replace(
+                    f"{corr} ({direction}) - ", "", regex=False
+                ).tolist()
                 seg_class = corr_metrics_sorted.set_index('segment_uid')['classification'].to_dict()
  
                 if len(seg_order) < 2:
@@ -690,13 +738,13 @@ def main():
                     tick_label.set_color(STATUS_COLORS[status])
                     tick_label.set_fontweight('bold')
  
-                ax_cascade.set_title(f"Cascade profile: {corr}", fontsize=11, fontweight='bold', color='#1a1a2e', pad=10)
+                ax_cascade.set_title(f"Cascade profile: {corr} ({direction})", fontsize=11, fontweight='bold', color='#1a1a2e', pad=10)
                 ax_cascade.set_xlabel("Hour of day", fontsize=9, fontweight='bold', color='#1a1a2e')
                 ax_cascade.set_ylabel("Segment (upstream → downstream)", fontsize=9, fontweight='bold', color='#1a1a2e')
                 plt.tight_layout()
                 st.pyplot(fig_cascade)
         else:
-            st.write("No corridor in the current dataset has more than one monitored segment.")
+            st.write("No corridor/direction pair in the current dataset has more than one monitored segment.")
  
         # ==============================================================================
         # 8. TOP SEGMENT PROFILES (weekday vs weekend)
@@ -753,12 +801,16 @@ def main():
         # ==============================================================================
         # 9. EMPIRICAL CASE STUDY
         # ==============================================================================
-        if len(multi_corridors) > 0:
+        if len(multi_pairs) > 0:
             st.write("---")
             section_title("Empirical Verification: Root-Cause Events")
-            for corr in multi_corridors:
-                case_df = df_analyzed[df_analyzed['corridor_name'] == corr]
-                corr_metrics_map = metrics[metrics['corridor_name'] == corr].set_index('segment_uid')['classification']
+            for corr, direction in multi_pairs:
+                case_df = df_analyzed[
+                    (df_analyzed['corridor_name'] == corr) & (df_analyzed['direction_track'] == direction)
+                ]
+                corr_metrics_map = metrics[
+                    (metrics['corridor_name'] == corr) & (metrics['direction_track'] == direction)
+                ].set_index('segment_uid')['classification']
  
                 fig4, ax4 = plt.subplots(figsize=(12, 5.0))
                 for seg_uid, seg_sub in case_df.groupby('segment_uid'):
@@ -774,7 +826,7 @@ def main():
                         ax4.scatter(rc_hourly.index, rc_hourly.values, color='#e74c3c', zorder=6, s=130,
                                     marker='X', edgecolors='white', linewidths=1.0, label=f"Verified breakdown ({seg_label})")
  
-                ax4.set_title(f"Corridor: {corr}", fontsize=11, fontweight='bold', pad=12, color='#1a1a2e')
+                ax4.set_title(f"Corridor: {corr} ({direction})", fontsize=11, fontweight='bold', pad=12, color='#1a1a2e')
                 ax4.set_xlabel("Hour of day", fontweight='bold', fontsize=9, color='#1a1a2e')
                 ax4.set_ylabel("Mean TTI", fontweight='bold', fontsize=9, color='#1a1a2e')
                 ax4.set_xlim(0, 23)
@@ -792,6 +844,128 @@ def main():
                     f"Red X markers show intervals where a link broke down while its upstream neighbor stayed clear "
                     f"({n_rc_total} verified instances over the observation window)."
                 )
+ 
+        # ==============================================================================
+        # 9b. MACHINE LEARNING CROSS-CHECK: LOGISTIC REGRESSION BREAKDOWN RISK MODEL
+        # A data-driven second opinion on the rule-based classification above, trained
+        # network-wide (every segment, every corridor, every direction) so it still
+        # answers the same "rank all segments" business question — implemented from
+        # scratch with NumPy so it needs no scikit-learn dependency.
+        # ==============================================================================
+        st.write("---")
+        section_title("Machine Learning Cross-Check: Predicted Breakdown Risk")
+        st.markdown(
+            '<div class="h1-section-sub">A logistic regression trained on the full network\'s history predicts the '
+            'probability that a segment will be congested in the next interval, given its current state — an '
+            'independent, data-driven second opinion on the rule-based classification above, not a replacement for '
+            'it. Built from scratch with NumPy, so it runs with no scikit-learn dependency.</div>',
+            unsafe_allow_html=True
+        )
+ 
+        ml_df = df_analyzed.copy()
+        ml_df['upstream_congested_flag'] = ml_df['upstream_is_congested'].fillna(False).astype(int)
+        ml_df['current_congested_flag'] = ml_df['is_congested'].astype(int)
+        ml_df['hour_sin'] = np.sin(2 * np.pi * ml_df['hour_of_day'] / 24.0)
+        ml_df['hour_cos'] = np.cos(2 * np.pi * ml_df['hour_of_day'] / 24.0)
+        seg_hist_rate = metrics.set_index('segment_uid')['pct_time_congested'] / 100.0
+        ml_df['segment_hist_rate'] = ml_df['segment_uid'].map(seg_hist_rate).fillna(0.0)
+        ml_df['target'] = ml_df['next_interval_congested']
+ 
+        model_df = ml_df.dropna(subset=['target']).copy()
+        model_df['target'] = model_df['target'].astype(int)
+ 
+        feature_cols = ['travel_time_index_tti', 'current_congested_flag', 'upstream_congested_flag',
+                         'hour_sin', 'hour_cos', 'segment_hist_rate']
+        feature_labels = ['Current TTI', 'Currently congested', 'Upstream congested',
+                           'Hour (sin)', 'Hour (cos)', 'Historical congestion rate']
+ 
+        if len(model_df) >= 50 and model_df['target'].nunique() == 2:
+            X_raw = model_df[feature_cols].values.astype(float)
+            y = model_df['target'].values.astype(float)
+ 
+            feat_mean = X_raw.mean(axis=0)
+            feat_std = X_raw.std(axis=0)
+            feat_std[feat_std == 0] = 1.0
+            X_scaled = (X_raw - feat_mean) / feat_std
+ 
+            rng = np.random.RandomState(7)
+            shuffle_idx = rng.permutation(len(X_scaled))
+            split = int(len(X_scaled) * 0.7)
+            train_idx, test_idx = shuffle_idx[:split], shuffle_idx[split:]
+            X_train, X_test = X_scaled[train_idx], X_scaled[test_idx]
+            y_train, y_test = y[train_idx], y[test_idx]
+ 
+            def _sigmoid(z):
+                return 1.0 / (1.0 + np.exp(-np.clip(z, -30, 30)))
+ 
+            Xb_train = np.hstack([np.ones((len(X_train), 1)), X_train])
+            weights = np.zeros(Xb_train.shape[1])
+            lr, epochs = 0.2, 500
+            for _ in range(epochs):
+                preds = _sigmoid(Xb_train @ weights)
+                grad = Xb_train.T @ (preds - y_train) / len(y_train)
+                weights -= lr * grad
+ 
+            Xb_test = np.hstack([np.ones((len(X_test), 1)), X_test])
+            proba_test = _sigmoid(Xb_test @ weights)
+            Xb_all = np.hstack([np.ones((len(X_scaled), 1)), X_scaled])
+            proba_all = _sigmoid(Xb_all @ weights)
+            coefs = weights[1:]
+            acc = float(((proba_test >= 0.5).astype(int) == y_test).mean())
+ 
+            pos = proba_test[y_test == 1]
+            neg = proba_test[y_test == 0]
+            if len(pos) > 0 and len(neg) > 0:
+                ranks = pd.Series(np.concatenate([pos, neg])).rank().values
+                auc = (ranks[:len(pos)].sum() - len(pos) * (len(pos) + 1) / 2) / (len(pos) * len(neg))
+            else:
+                auc = np.nan
+ 
+            model_df['ml_risk_score'] = proba_all
+ 
+            kpi_ml = [
+                ("Model", "Logistic regression (NumPy)", "#3498db", "Trained on full network history"),
+                ("Test accuracy", f"{acc*100:.1f}%", "#2ecc71", "Held-out 30% of intervals"),
+                ("Test AUC", f"{auc:.3f}" if pd.notna(auc) else "N/A", "#f1c40f", "Ranking quality of risk scores"),
+                ("Intervals modeled", f"{len(model_df):,}", "#e74c3c", "Across every corridor and direction"),
+            ]
+            render_kpi_row(kpi_ml)
+            st.write("")
+ 
+            coef_df = pd.DataFrame({'feature': feature_labels, 'coefficient': coefs}).sort_values('coefficient')
+            fig_ml, ax_ml = plt.subplots(figsize=(9, 3.5))
+            bar_colors_ml = ['#e74c3c' if c > 0 else '#3498db' for c in coef_df['coefficient']]
+            ax_ml.barh(coef_df['feature'], coef_df['coefficient'], color=bar_colors_ml, edgecolor='white')
+            ax_ml.axvline(x=0, color='#4a5568', linewidth=1)
+            ax_ml.set_xlabel("Standardized coefficient (pushes risk up →, down ←)", fontsize=9, color='#1a1a2e', fontweight='bold')
+            ax_ml.grid(axis='x', linestyle=':', alpha=0.4)
+            style_axes(ax_ml)
+            plt.tight_layout()
+            st.pyplot(fig_ml)
+            st.caption(
+                "Positive bars increase next-interval breakdown risk; negative bars are protective. Segments the "
+                "rule-based classifier tags as spillover should show 'Upstream congested' as their dominant risk "
+                "driver here — if they don't, that combination is worth a second look."
+            )
+ 
+            seg_risk = model_df.groupby('segment_uid')['ml_risk_score'].mean().rename('ml_risk_score')
+            top_priority_metrics = top_priority_metrics.merge(seg_risk, on='segment_uid', how='left')
+            top_priority_metrics['ml_risk_score'] = top_priority_metrics['ml_risk_score'].fillna(0.0)
+ 
+            risk_display = top_priority_metrics[['segment_id', 'classification', 'ml_risk_score']].rename(columns={
+                'segment_id': 'Segment', 'classification': 'Rule-based classification', 'ml_risk_score': 'ML breakdown risk (avg)'
+            })
+            styled_risk = risk_display.style.apply(
+                lambda col: [STATUS_STYLE.get(v, '') for v in col] if col.name == 'Rule-based classification' else ['' for _ in col],
+                axis=0
+            ).format({'ML breakdown risk (avg)': '{:.1%}'})
+            st.dataframe(styled_risk, use_container_width=True)
+            st.caption(
+                "A high ML risk score alongside a 'No structural issue detected' rule-based tag is worth a second "
+                "look — it means the model sees a recurring pattern the fixed threshold rule may be missing."
+            )
+        else:
+            st.info("Not enough labeled intervals (or only one outcome class present) in this dataset yet to train a reliable model.")
  
         # ==============================================================================
         # 10. EXECUTIVE SUMMARY & ENGINEERING NEXT STEPS
