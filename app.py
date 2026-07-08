@@ -932,7 +932,7 @@ def main():
                 "look — it means the model sees a recurring pattern the fixed threshold rule may be missing."
             )
         else:
-            st.info("Not enough labeled intervals (or only one outcome class present) in this dataset yet to train a reliable model."
+            st.info("Not enough labeled intervals (or only one outcome class present) in this dataset yet to train a reliable model.")
  
         # ==============================================================================
         # 10. EXECUTIVE SUMMARY & ENGINEERING NEXT STEPS
