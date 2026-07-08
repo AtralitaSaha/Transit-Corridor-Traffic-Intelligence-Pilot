@@ -60,11 +60,14 @@ st.markdown("""
 STATUS_COLORS = {
     "Confirmed root cause": "#e74c3c",              # red    — act now
     "Likely spillover / victim": "#f1c40f",          # yellow — caution, don't touch this segment
+    "Untestable — no adjacent sensor": "#3498db",    # blue   — needs more data
     "No structural issue detected": "#2ecc71",       # green  — no action needed
 }
+
 STATUS_STYLE = {
     "Confirmed root cause": "background-color:#fdecea; color:#c0392b; font-weight:bold;",
     "Likely spillover / victim": "background-color:#fef9e7; color:#b7950b; font-weight:bold;",
+    "Untestable — no adjacent sensor": "background-color:#eaf2fb; color:#2874a6; font-weight:bold;",
     "No structural issue detected": "background-color:#eafaf1; color:#229954; font-weight:bold;",
 }
 
@@ -265,16 +268,10 @@ def main():
         })
         st.table(buffer_summary)
 
-   # =============================================================================
+    # =============================================================================
     # MODULE TAB 1: HYPOTHESIS 1 - SYSTEMIC BOTTLENECK LOCALIZATION
     # =============================================================================
-   
     elif selected_tab == "Hypothesis 1: Systemic Bottleneck Localization":
- 
-        from sklearn.model_selection import train_test_split
-        from sklearn.preprocessing import StandardScaler
-        from sklearn.linear_model import LogisticRegression
-        from sklearn.metrics import accuracy_score, roc_auc_score
  
         inject_professional_style()
         apply_pro_plot_style()
@@ -614,14 +611,18 @@ def main():
             segments_monitored=('segment_uid', 'nunique'),
             congested_intervals=('is_congested', 'sum'),
         ).sort_values(by='mean_tti', ascending=False).reset_index()
+        
+        # Fix: Use applymap for background gradient instead of background_gradient which is deprecated
         corridor_styled = corridor_rankings.style.format(
             {'mean_tti': '{:.3f}', 'max_tti': '{:.2f}'}
-        ).background_gradient(subset=['mean_tti'], cmap='Reds') \
-         .set_table_styles([
-             {'selector': 'th', 'props': [('background-color', '#1a1a2e'), ('color', 'white'),
-                                           ('font-weight', '600'), ('font-size', '12.5px'),
-                                           ('text-transform', 'uppercase')]}
-         ])
+        ).applymap(
+            lambda x: 'background-color: #fde0dd' if x == corridor_rankings['mean_tti'].max() else '',
+            subset=['mean_tti']
+        ).set_table_styles([
+            {'selector': 'th', 'props': [('background-color', '#1a1a2e'), ('color', 'white'),
+                                          ('font-weight', '600'), ('font-size', '12.5px'),
+                                          ('text-transform', 'uppercase')]}
+        ])
         st.dataframe(corridor_styled, use_container_width=True)
         st.caption(
             "Corridors with only one monitored segment (segments_monitored = 1) are judged by the self-persistence "
@@ -946,8 +947,8 @@ def main():
                 f'{row["classification"]} ({row["priority_tier"]} priority): {row["recommended_action"]}',
                 unsafe_allow_html=True
             )
- 
-   # =============================================================================
+
+    # =============================================================================
     # MODULE TAB 2: HYPOTHESIS 2 - TEMPORAL PEAK PROFILING
     # =============================================================================
     elif selected_tab == "Hypothesis 2: Temporal Peak Profiling":
@@ -1507,6 +1508,7 @@ def main():
             f"sensitivity slope.",
             border_color="#e74c3c"
         )
+
     # =============================================================================
     # MODULE TAB 5: HYPOTHESIS 5 - TIDAL FLOW ASYMMETRY — (ARUSHI)
     # =============================================================================
@@ -1593,6 +1595,7 @@ def main():
                 st.caption("Side-by-side peak density mismatch isolates systemic workforce migration flows.")
         else:
             st.warning("Directional tracking requires multiple vector variants. Check input source column alignments.")
+    
     # =============================================================================
     # MODULE TAB 6: HYPOTHESIS 6 - COMMUTER UNCERTAINTY — (ARUSHI)
     # =============================================================================
@@ -1746,6 +1749,7 @@ def main():
         section_title("Actionable Policy Translation Framework")
         policy_matrix_rows = [{'Shapefile Node Link': r['shapefile_segment_name'], 'Diagnostic Finding': 'Acute Volatility Deficit' if r['bti_val']>=80 else ('Constant Gridlock Saturation' if r['mu_tti']>=2.0 else 'Nominal Systemic Variance'), 'Metric Compliance Out': f"BTI = {r['bti_val']:.1f}%" if r['bti_val']>=80 else f"Mean TTI = {r['mu_tti']:.2f}", 'Targeted CUMTA Policy Intervention': 'Deploy Incident Response Teams & Enforce Parking Bans' if r['bti_val']>=80 else ('Capital Lane Expansion Works' if r['mu_tti']>=2.0 else 'Maintain Continuous Ingestion Monitoring')} for _, r in metrics_registry.iterrows()]
         st.table(pd.DataFrame(policy_matrix_rows).head(5))
+
     # =============================================================================
     # MODULE TAB 7: HYPOTHESIS 7 - FLYOVER EXIT & UPHILL GRADIENTS
     # =============================================================================
@@ -2119,7 +2123,7 @@ def main():
 
         feat_cols = ['mu_peak', 'mu_offpeak', 'bti_val', 'beta_rain', 'net_asymmetry']
         df_scaled = (df_tax_base[feat_cols] - df_tax_base[feat_cols].mean()) / df_tax_base[feat_cols].std().replace(0,1)
-        corr_matrix = df_standardized = df_scaled.corr().abs()
+        corr_matrix = df_scaled.corr().abs()
 
         # Compute PCA projection vectors using numpy matrices
         pca_proj = np.dot(df_scaled, np.linalg.eigh(np.cov(df_scaled.T))[1][:, ::-1][:, :2])
@@ -2193,6 +2197,7 @@ def main():
             {'Assigned Taxonomy Group': 'Cluster D: Tidal Commuter Corridor', 'Centroid Target Profile Vector': 'High Net Asymmetry Index Split + Active Peak Inversion Loop', 'Targeted CUMTA Policy Intervention': 'Implement Dynamic Automated Reversible Lane Traffic Systems'}
         ])
         st.table(policy_t)
+
     # =============================================================================
     # MODULE TAB 10: HYPOTHESIS 10 - VOLUME VIA AQI PROXY — (ARUSHI)
     # =============================================================================
@@ -2246,7 +2251,7 @@ def main():
         st.write("---")
 
         # ==============================================================================
-        # 3. DUAL ALIGNMENT TIMELINE & REGRESSION GRSub
+        # 3. DUAL ALIGNMENT TIMELINE & REGRESSION PLOTS
         # ==============================================================================
         section_title("Emissions Convergence Profiles & Regression Verifications")
         col_g1, col_g2 = st.columns(2)
@@ -2323,5 +2328,7 @@ def main():
             {'Congestion Index': 'Free-Flow ($TTI \le 1.2$)', 'Roadside AQI': 'Baseline Flat / Normal Profile', 'Inferred Traffic Mechanism': 'Optimal Healthy Corridor Operation', 'Targeted CUMTA Policy Intervention': 'Maintain Standard Automated Continuous Tracking Sensor Feeds'}
         ])
         st.table(verification_matrix)
+
+
 if __name__ == "__main__":
     main()
