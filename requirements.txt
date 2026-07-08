@@ -7,3 +7,4 @@ sqlalchemy>=2.0.0
 psycopg2-binary>=2.9.0
 folium==0.15.1
 streamlit-folium==0.15.0
+scikit-learn>=1.0.0
