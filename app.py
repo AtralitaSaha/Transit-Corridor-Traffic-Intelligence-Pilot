@@ -7,10 +7,17 @@ import streamlit as st
 import traceback
 import folium
 from streamlit_folium import st_folium
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, roc_auc_score
+
+# Try to import sklearn with graceful fallback
+try:
+    from sklearn.model_selection import train_test_split
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.metrics import accuracy_score, roc_auc_score
+    SKLEARN_AVAILABLE = True
+except ImportError:
+    SKLEARN_AVAILABLE = False
+    st.warning(" scikit-learn is not installed. Machine learning features will be disabled. Install with: pip install scikit-learn"
 
 
 # 1. Page Configuration & Professional Engineering Styling Enforcements
