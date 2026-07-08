@@ -7,6 +7,11 @@ import streamlit as st
 import traceback
 import folium
 from streamlit_folium import st_folium
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, roc_auc_score
+
 
 # 1. Page Configuration & Professional Engineering Styling Enforcements
 st.set_page_config(
@@ -55,13 +60,11 @@ st.markdown("""
 STATUS_COLORS = {
     "Confirmed root cause": "#e74c3c",              # red    — act now
     "Likely spillover / victim": "#f1c40f",          # yellow — caution, don't touch this segment
-    "Untestable — no adjacent sensor": "#3498db",    # blue   — needs more data
     "No structural issue detected": "#2ecc71",       # green  — no action needed
 }
 STATUS_STYLE = {
     "Confirmed root cause": "background-color:#fdecea; color:#c0392b; font-weight:bold;",
     "Likely spillover / victim": "background-color:#fef9e7; color:#b7950b; font-weight:bold;",
-    "Untestable — no adjacent sensor": "background-color:#eaf2fb; color:#2874a6; font-weight:bold;",
     "No structural issue detected": "background-color:#eafaf1; color:#229954; font-weight:bold;",
 }
 
@@ -265,7 +268,13 @@ def main():
    # =============================================================================
     # MODULE TAB 1: HYPOTHESIS 1 - SYSTEMIC BOTTLENECK LOCALIZATION
     # =============================================================================
+   
     elif selected_tab == "Hypothesis 1: Systemic Bottleneck Localization":
+ 
+        from sklearn.model_selection import train_test_split
+        from sklearn.preprocessing import StandardScaler
+        from sklearn.linear_model import LogisticRegression
+        from sklearn.metrics import accuracy_score, roc_auc_score
  
         inject_professional_style()
         apply_pro_plot_style()
@@ -275,7 +284,6 @@ def main():
             "True root-cause bottlenecks vs. spillover / victim traffic, ranked for engineering triage"
         )
  
-       
         # ==============================================================================
         # 1. BUSINESS QUESTION
         # ==============================================================================
@@ -298,23 +306,23 @@ def main():
             "(its own 90th percentile), not a single corridor-wide or citywide cutoff — so a segment that is "
             "naturally slower by geometry or length isn't auto-flagged just because it shares a corridor with faster "
             "links, and a naturally fast segment isn't unfairly cleared. Using segment position (`sequence_order`) "
-            "and timestamp, each segment is checked against its immediate upstream neighbor at every time step, and "
-            "classified into one of four statuses: **confirmed root cause**, **likely spillover / victim**, "
-            "**untestable** (no adjacent sensor to compare against), or **no structural issue detected**. A segment "
-            "only earns \"confirmed root cause\" after **at least 2 independently verified breakdown events** — a "
-            "single one-off spike is treated as noise, not proof of a structural fault, which is what previously let "
-            "almost every segment get lumped into the same bucket even though their priority scores clearly differed. "
-            "Upstream/downstream comparisons are also now scoped **within a single direction of travel** — a corridor "
-            "carrying both Northbound and Southbound segments is split into two independent one-way chains before "
-            "any segment is compared to its neighbor, since a Northbound queue physically cannot spill into a "
-            "Southbound segment. Every segment on the network is still ranked together on one list, as the business "
-            "question requires — only the upstream test itself is now direction-aware."
+            "and timestamp, each segment is checked against its immediate upstream neighbor **within its own "
+            "corridor**, and classified into one of three statuses: **confirmed root cause**, **likely spillover / "
+            "victim**, or **no structural issue detected**. A segment only earns \"confirmed root cause\" after "
+            "**at least 2 independently verified breakdown events** — a single one-off spike is treated as noise, "
+            "not proof of a structural fault.\n\n"
+            "**Corridor name is the chain key — nothing else.** Two physically parallel but oppositely-signed roads "
+            "(e.g. `Central-Puzhal` and `Puzhal-Central`) are different strings in `corridor_name`, so they are "
+            "automatically treated as two independent one-way chains without any extra direction column, mapping, "
+            "or inference. Every segment on the network is ranked together on one list, exactly as the business "
+            "question requires."
         )
         render_callout(
-            "📡 <b>What \"Untestable\" means:</b> the root-cause vs. spillover test requires comparing a segment to "
-            "its upstream neighbor. If a segment sits alone on a single-segment corridor, there is no upstream "
-            "sensor to test against — so it is neither cleared nor flagged, it simply cannot be judged yet. The "
-            "recommended action for these segments is to add sensor coverage, not to dispatch a crew.",
+            "🔗 <b>Single-segment corridors:</b> if a corridor has only one monitored segment, there is no upstream "
+            "neighbor to test against — so the causal test can't check \"did the queue start somewhere else and "
+            "spill in.\" Instead it checks the only thing that's left: is the segment itself congested, and does "
+            "that congestion persist into the next interval, at least twice. That is a self-persistence test, not "
+            "an exoneration — a single-segment corridor can absolutely still earn <b>Confirmed root cause</b>.",
             border_color="#3498db"
         )
  
@@ -329,6 +337,7 @@ def main():
             with m2:
                 st.markdown("**2. Upstream is clear**")
                 st.latex(r"\text{upstream is\_congested} = \text{False}")
+                st.caption("Automatically true if there is no upstream segment.")
             with m3:
                 st.markdown("**3. Persists**")
                 st.latex(r"\text{is\_congested}_{t+1} = \text{True}")
@@ -337,7 +346,7 @@ def main():
                 st.latex(r"\text{events} \geq 2")
             st.markdown(
                 "If a segment is congested at the same time as its upstream neighbor, it is classified as a "
-                "**likely spillover / victim** instead."
+                "**likely spillover / victim** instead (this can only happen on corridors with 2+ segments)."
             )
             st.markdown("**Composite priority score (MCBI):**")
             weight_table = pd.DataFrame({
@@ -352,8 +361,8 @@ def main():
             })
             st.dataframe(weight_table, use_container_width=True, hide_index=True)
             st.caption(
-                "For single-segment corridors, the root-cause weight is dropped (no upstream neighbor exists to test "
-                "against) and the remaining three weights are rescaled to sum to 1.0."
+                "All four weights apply to every segment now, single-segment or not, since the root-cause test "
+                "always produces a real event count (see the self-persistence note above)."
             )
         st.write("---")
  
@@ -382,65 +391,51 @@ def main():
         if 'is_weekend' not in df_analyzed.columns:
             df_analyzed['is_weekend'] = 0
  
-        # FIX ("both-ways" bug): a corridor can carry BOTH Northbound and Southbound
-        # segments. Sorting purely by sequence_order previously treated these as one
-        # single upstream->downstream chain, so a segment could get compared against
-        # a neighbor travelling the opposite direction — physically impossible for a
-        # real queue to spill into. Each corridor is now split into independent
-        # one-way chains by direction before any upstream/downstream test runs.
-        if 'direction_track' not in df_analyzed.columns:
-            df_analyzed['direction_track'] = np.where(
-                df_analyzed['shapefile_segment_name'].str.contains('001|003|005|018'), 'Northbound', 'Southbound'
-            )
-        else:
-            df_analyzed['direction_track'] = df_analyzed['direction_track'].astype(str).str.upper().str.strip()
-            direction_mapping = {
-                'NB': 'Northbound', 'N': 'Northbound', 'NORTH': 'Northbound', 'NORTHBOUND': 'Northbound',
-                'SB': 'Southbound', 'S': 'Southbound', 'SOUTH': 'Southbound', 'SOUTHBOUND': 'Southbound',
-                'INBOUND': 'Northbound', 'OUTBOUND': 'Southbound'
-            }
-            df_analyzed['direction_track'] = df_analyzed['direction_track'].map(direction_mapping).fillna('Northbound')
- 
+        # Corridor name is the ONLY chain key. No direction_track column, no
+        # NB/SB mapping, no inference. "Central-Puzhal" and "Puzhal-Central"
+        # are different strings, so they are automatically different chains.
         df_analyzed = df_analyzed.sort_values(
-            by=['corridor_name', 'direction_track', 'execution_timestamp', 'sequence_order']
+            by=['corridor_name', 'execution_timestamp', 'sequence_order']
         ).reset_index(drop=True)
  
         # ==============================================================================
         # 3. CORE COMPUTATION
         # ==============================================================================
-        # FIX: threshold is now computed PER SEGMENT, not per corridor. A shared
-        # corridor-wide P90 let one naturally-slow segment sit "congested" almost
-        # permanently while a naturally-fast segment in the same corridor almost
-        # never tripped it — which is why nearly every segment used to land in the
-        # same classification bucket even though their MCBI priority scores differed.
+        # Threshold computed PER SEGMENT, not per corridor, so a naturally-slow
+        # segment doesn't sit "congested" almost permanently while a naturally-fast
+        # segment on the same corridor almost never trips it.
         congestion_bounds = df_analyzed.groupby('segment_uid')['travel_time_index_tti'].transform(lambda x: x.quantile(0.90))
         df_analyzed['congestion_threshold'] = congestion_bounds
         df_analyzed['is_congested'] = df_analyzed['travel_time_index_tti'] > congestion_bounds
  
-        # multi_segment_corridor is now evaluated per (corridor, direction) pair —
-        # a corridor with 1 NB segment and 1 SB segment has no upstream neighbor in
-        # either direction, so it should be untestable, not treated as a 2-segment chain.
-        seg_count_per_corridor = df_analyzed.groupby(['corridor_name', 'direction_track'])['segment_uid'].transform('nunique')
+        seg_count_per_corridor = df_analyzed.groupby('corridor_name')['segment_uid'].transform('nunique')
         df_analyzed['multi_segment_corridor'] = seg_count_per_corridor > 1
  
         df_analyzed['upstream_is_congested'] = df_analyzed.groupby(
-            ['corridor_name', 'direction_track', 'execution_timestamp']
+            ['corridor_name', 'execution_timestamp']
         )['is_congested'].shift(1)
         df_analyzed['next_interval_congested'] = df_analyzed.groupby(
-            ['corridor_name', 'direction_track', 'segment_uid']
+            ['corridor_name', 'segment_uid']
         )['is_congested'].shift(-1)
  
+        # root_cause_event is now ALWAYS a real True/False, never NaN:
+        # - multi-segment corridor -> full test (congested, upstream clear, persists)
+        # - single-segment corridor -> self-persistence test (congested, persists);
+        #   condition 2 ("upstream is clear") is trivially satisfied since there is
+        #   no upstream to be congested in the first place.
         df_analyzed['root_cause_event'] = np.where(
             df_analyzed['multi_segment_corridor'],
             (df_analyzed['is_congested'] == True) &
             (df_analyzed['upstream_is_congested'] == False) &
             (df_analyzed['next_interval_congested'] == True),
-            np.nan
+            (df_analyzed['is_congested'] == True) &
+            (df_analyzed['next_interval_congested'] == True)
         )
+        # Spillover can only exist where an upstream neighbor exists at all.
         df_analyzed['spillover_event'] = np.where(
             df_analyzed['multi_segment_corridor'],
             (df_analyzed['is_congested'] == True) & (df_analyzed['upstream_is_congested'] == True),
-            np.nan
+            False
         )
  
         peak_hours = df_analyzed[df_analyzed['hour_of_day'].isin([7, 8, 9, 10, 17, 18, 19, 20])].copy()
@@ -456,14 +451,14 @@ def main():
             avg_onset = pd.DataFrame(columns=['segment_uid', 'mean_onset_hour'])
  
         metrics = df_analyzed.groupby(
-            ['segment_uid', 'corridor_name', 'direction_track', 'shapefile_segment_name', 'multi_segment_corridor']
+            ['segment_uid', 'corridor_name', 'shapefile_segment_name', 'multi_segment_corridor']
         ).agg(
             p90_tti=('travel_time_index_tti', lambda x: x.quantile(0.90)),
             mean_tti=('travel_time_index_tti', 'mean'),
             total_intervals=('is_congested', 'count'),
             total_congested_intervals=('is_congested', 'sum'),
-            root_cause_events=('root_cause_event', lambda x: x.sum() if x.notna().any() else np.nan),
-            spillover_events=('spillover_event', lambda x: x.sum() if x.notna().any() else np.nan),
+            root_cause_events=('root_cause_event', 'sum'),
+            spillover_events=('spillover_event', 'sum'),
             mean_sequence_order=('sequence_order', 'mean'),
         ).reset_index()
  
@@ -479,48 +474,32 @@ def main():
         metrics['n_p90'] = _minmax(metrics['p90_tti'])
         metrics['n_pct_congested'] = _minmax(metrics['pct_time_congested'])
         metrics['n_onset'] = 1.0 - _minmax(metrics['mean_onset_hour'])
- 
-        has_rc_data = metrics['root_cause_events'].notna()
-        metrics['n_root_cause'] = np.nan
-        if has_rc_data.any():
-            metrics.loc[has_rc_data, 'n_root_cause'] = _minmax(metrics.loc[has_rc_data, 'root_cause_events'])
-            if metrics.loc[has_rc_data, 'root_cause_events'].nunique() == 1:
-                metrics.loc[has_rc_data, 'n_root_cause'] = 1.0
+        metrics['n_root_cause'] = _minmax(metrics['root_cause_events'])
  
         W_P90, W_PCT, W_ONSET, W_RC = 0.25, 0.20, 0.25, 0.30
-        mcbi_scores = []
-        for _, row in metrics.iterrows():
-            base = row['n_p90'] * W_P90 + row['n_pct_congested'] * W_PCT + row['n_onset'] * W_ONSET
-            if pd.notna(row['n_root_cause']):
-                score = base + (row['n_root_cause'] * W_RC)
-            else:
-                score = base / (W_P90 + W_PCT + W_ONSET)
-            mcbi_scores.append(score)
-        metrics['mcbi_score'] = mcbi_scores
+        metrics['mcbi_score'] = (
+            metrics['n_p90'] * W_P90 +
+            metrics['n_pct_congested'] * W_PCT +
+            metrics['n_onset'] * W_ONSET +
+            metrics['n_root_cause'] * W_RC
+        )
  
         # ----- Classification: answers the hypothesis question directly, per segment -----
-        # FIX: require >= MIN_ROOT_CAUSE_EVENTS verified events before declaring a
-        # segment a confirmed root cause. One noisy event is not proof of a
-        # structural fault, and this is what previously pushed almost every
-        # segment into "Confirmed root cause" regardless of its actual MCBI rank.
+        # No more "Untestable". Every segment lands in exactly one of three buckets.
         def _classify(row):
-            if pd.isna(row['root_cause_events']):
-                return "Untestable — no adjacent sensor"
             if row['root_cause_events'] >= MIN_ROOT_CAUSE_EVENTS:
                 return "Confirmed root cause"
-            if pd.notna(row['spillover_events']) and row['spillover_events'] > 0:
+            if row['spillover_events'] > 0:
                 return "Likely spillover / victim"
             return "No structural issue detected"
  
         metrics['classification'] = metrics.apply(_classify, axis=1)
  
-        # ----- Segment-level ID, e.g. "Corridor B (Northbound) - Segment 003" -----
-        # Position is now ranked within (corridor, direction) so it reflects true
-        # physical order along a single one-way chain, not a mixed bidirectional one.
-        metrics['corridor_position'] = metrics.groupby(['corridor_name', 'direction_track'])['mean_sequence_order'] \
+        # ----- Segment-level ID, e.g. "Central-Puzhal - Segment 003" -----
+        metrics['corridor_position'] = metrics.groupby('corridor_name')['mean_sequence_order'] \
             .rank(method='first').astype(int)
         metrics['segment_id'] = metrics.apply(
-            lambda r: f"{r['corridor_name']} ({r['direction_track']}) - Segment {r['corridor_position']:03d}", axis=1
+            lambda r: f"{r['corridor_name']} - Segment {r['corridor_position']:03d}", axis=1
         )
  
         # ----- Priority tier, for quick triage -----
@@ -535,8 +514,6 @@ def main():
                 return "Field audit: inspect signal timing, lane geometry, and physical obstructions at this segment first."
             if row['classification'] == "Likely spillover / victim":
                 return "No physical fix needed here — resolve the upstream root-cause segment to relieve this queue."
-            if row['classification'] == "Untestable — no adjacent sensor":
-                return "Add upstream/downstream sensors before committing capital works at this location."
             return "Routine monitoring; no action required at this time."
  
         metrics['recommended_action'] = metrics.apply(_recommend, axis=1)
@@ -545,21 +522,21 @@ def main():
         top_priority_metrics.insert(0, 'priority_rank', top_priority_metrics.index + 1)
         top_5_segments = top_priority_metrics.head(5)
         top_row = top_priority_metrics.iloc[0]
-        rc_segments = metrics[metrics['root_cause_events'].fillna(0) > 0].sort_values('root_cause_events', ascending=False)
+        rc_segments = metrics[metrics['root_cause_events'] > 0].sort_values('root_cause_events', ascending=False)
  
         # ==============================================================================
         # 4. KPI HEADER ROW — quick-glance network health
         # ==============================================================================
         n_confirmed = int((metrics['classification'] == "Confirmed root cause").sum())
         n_spillover = int((metrics['classification'] == "Likely spillover / victim").sum())
-        n_untestable = int((metrics['classification'] == "Untestable — no adjacent sensor").sum())
         n_clear = int((metrics['classification'] == "No structural issue detected").sum())
+        n_single_seg_corridors = int(metrics.loc[~metrics['multi_segment_corridor'], 'corridor_name'].nunique())
  
         kpi_defs = [
             ("Confirmed root causes", n_confirmed, "#e74c3c", "Segments needing a field crew"),
             ("Likely spillover / victims", n_spillover, "#f1c40f", "No fix needed here directly"),
-            ("Untestable segments", n_untestable, "#3498db", "No adjacent sensor to compare"),
             ("No issue detected", n_clear, "#2ecc71", "Operating within normal range"),
+            ("Single-segment corridors", n_single_seg_corridors, "#3498db", "Judged by self-persistence, not upstream test"),
         ]
         render_kpi_row(kpi_defs)
  
@@ -580,30 +557,47 @@ def main():
             st.markdown(
                 f"**Declared bottleneck: `{rc_top['segment_id']}`** ({rc_top['shapefile_segment_name']}) — confirmed "
                 f"root cause with **{int(rc_top['root_cause_events'])} verified breakdown events** where the segment "
-                f"failed while its upstream neighbor stayed clear, and the failure persisted into the next interval."
+                f"failed while its upstream neighbor stayed clear (or, on a single-segment corridor, failed and kept "
+                f"failing on its own), and the failure persisted into the next interval."
             )
+            if rc_top['segment_id'] != top_row['segment_id']:
+                render_callout(
+                    f"⚠️ <b>Why the \"declared bottleneck\" and the \"#1 priority segment\" can differ:</b> "
+                    f"<code>{rc_top['segment_id']}</code> has the most <b>verified causal events</b> — direct "
+                    f"evidence it originates a queue. <code>{top_row['segment_id']}</code> has the highest "
+                    f"<b>MCBI score</b> — a blend of tail severity, how often it's congested, how early it breaks "
+                    f"down, AND causal evidence (worth 30% of the score). A segment can rank #1 on MCBI purely on "
+                    f"severity/frequency/early-onset even with zero or few verified root-cause events (e.g. a "
+                    f"structurally slow single-segment link like a steep incline, if that's what's driving this "
+                    f"result), while a different segment has fewer overall red flags but passes the strict causal "
+                    f"test more often. Use the <b>declared bottleneck</b> to answer \"which segment is proven to "
+                    f"originate a cascading queue,\" and the <b>MCBI ranking</b> to answer \"which segment is worst "
+                    f"overall, all factors combined.\" They are two different questions and won't always agree.",
+                    border_color="#f1c40f"
+                )
         else:
             st.markdown(
                 f"**No segment has a confirmed root-cause event yet.** The highest-priority segment by overall "
                 f"severity is `{top_row['segment_id']}` ({top_row['shapefile_segment_name']}), currently classified as "
-                f"**{top_row['classification']}** — prioritize it for additional sensor coverage."
+                f"**{top_row['classification']}**."
             )
  
         full_display_cols = [
             'priority_rank', 'segment_id', 'classification', 'priority_tier',
-            'p90_tti', 'pct_time_congested', 'mean_onset_hour', 'mcbi_score', 'recommended_action'
+            'p90_tti', 'pct_time_congested', 'mean_onset_hour', 'root_cause_events', 'mcbi_score', 'recommended_action'
         ]
         display_df = top_priority_metrics[full_display_cols].rename(columns={
             'priority_rank': 'Rank', 'segment_id': 'Segment', 'classification': 'Classification',
             'priority_tier': 'Priority', 'p90_tti': 'P90 TTI', 'pct_time_congested': 'Congestion density (%)',
-            'mean_onset_hour': 'Avg onset time', 'mcbi_score': 'MCBI score', 'recommended_action': 'Recommended action'
+            'mean_onset_hour': 'Avg onset time', 'root_cause_events': 'Verified root-cause events',
+            'mcbi_score': 'MCBI score', 'recommended_action': 'Recommended action'
         })
         styled_df = display_df.style.apply(
             lambda col: [STATUS_STYLE.get(v, '') for v in col] if col.name == 'Classification' else ['' for _ in col],
             axis=0
         ).format({
             'P90 TTI': '{:.2f}', 'Congestion density (%)': '{:.2f}%',
-            'Avg onset time': '{:.1f}:00', 'MCBI score': '{:.4f}'
+            'Avg onset time': '{:.1f}:00', 'Verified root-cause events': '{:.0f}', 'MCBI score': '{:.4f}'
         }).set_properties(**{'font-size': '13px'}) \
          .set_table_styles([
              {'selector': 'th', 'props': [('background-color', '#1a1a2e'), ('color', 'white'),
@@ -613,8 +607,8 @@ def main():
         st.dataframe(styled_df, use_container_width=True)
  
         st.write("---")
-        section_title("Corridor & Direction-Level Summary")
-        corridor_rankings = df_analyzed.groupby(['corridor_name', 'direction_track']).agg(
+        section_title("Corridor-Level Summary")
+        corridor_rankings = df_analyzed.groupby('corridor_name').agg(
             mean_tti=('travel_time_index_tti', 'mean'),
             max_tti=('travel_time_index_tti', 'max'),
             segments_monitored=('segment_uid', 'nunique'),
@@ -630,8 +624,8 @@ def main():
          ])
         st.dataframe(corridor_styled, use_container_width=True)
         st.caption(
-            "Corridor/direction pairs with only one monitored segment have no adjacent sensor to compare against, so "
-            "their segments are always classified as untestable rather than clear."
+            "Corridors with only one monitored segment (segments_monitored = 1) are judged by the self-persistence "
+            "test described above, not by comparison to an upstream neighbor."
         )
  
         # ==============================================================================
@@ -647,11 +641,7 @@ def main():
         decomp['contrib_p90'] = decomp['n_p90'] * W_P90
         decomp['contrib_pct'] = decomp['n_pct_congested'] * W_PCT
         decomp['contrib_onset'] = decomp['n_onset'] * W_ONSET
-        decomp['contrib_rc'] = decomp['n_root_cause'].fillna(0) * W_RC
- 
-        no_rc_mask = decomp['n_root_cause'].isna()
-        rescale = 1.0 / (W_P90 + W_PCT + W_ONSET)
-        decomp.loc[no_rc_mask, ['contrib_p90', 'contrib_pct', 'contrib_onset']] *= rescale
+        decomp['contrib_rc'] = decomp['n_root_cause'] * W_RC
         decomp_top5 = decomp.head(5)
  
         fig1, ax1 = plt.subplots(figsize=(12, 5.0))
@@ -678,73 +668,55 @@ def main():
         plt.yticks(fontsize=8)
         plt.tight_layout()
         st.pyplot(fig1)
-        st.caption("The red block is the only component tied to confirmed causal evidence; a segment with a tall red block is a verified root cause.")
+        st.caption("The red block is the only component tied to confirmed causal evidence; a segment with a tall red block is a verified root cause. A segment can still rank highly with a small red block if the other three components are large enough — that's the MCBI-vs-declared-bottleneck gap explained above.")
  
         # ==============================================================================
-        # 7. CONGESTION CASCADE TIMELINE (replaces the old static spatial bar chart)
+        # 7. SEGMENT-WISE CONGESTION HEATMAPS BY CORRIDOR (replaces the cascade timeline)
         # ==============================================================================
         st.write("---")
-        section_title("Congestion Cascade Timeline")
+        section_title("Segment-Wise Congestion Heatmaps by Corridor")
         st.markdown(
-            '<div class="h1-section-sub">For each corridor, segments are stacked in physical order (top = most '
-            'upstream, bottom = most downstream). Cell color is the fraction of that hour spent congested, so a red '
-            'band on a downstream segment trailing an hour behind a red band upstream is queue spillover — not an '
-            'independent failure. Segment labels are color-coded by status: red = confirmed root cause, yellow = '
-            'likely spillover, green = no structural issue, blue = untestable.</div>',
+            '<div class="h1-section-sub">Every corridor in the dataset, one heatmap each. Segments are stacked in '
+            'physical order (top = most upstream, bottom = most downstream). Cell color is the fraction of that '
+            'hour spent congested, so a red band on a downstream segment trailing an hour behind a red band '
+            'upstream is queue spillover — not an independent failure. Segment labels are color-coded by status: '
+            'red = confirmed root cause, yellow = likely spillover, green = no structural issue.</div>',
             unsafe_allow_html=True
         )
  
-        # Loop over (corridor, direction) pairs rather than corridor alone, so a
-        # corridor with both NB and SB segments gets one cascade chart per direction
-        # instead of merging two opposite-flow chains into a single misleading one.
-        multi_pairs = (
-            metrics.loc[metrics['multi_segment_corridor'], ['corridor_name', 'direction_track']]
-            .drop_duplicates()
-            .sort_values(['corridor_name', 'direction_track'])
-            .values.tolist()
-        )
+        all_corridors_sorted = sorted(metrics['corridor_name'].unique().tolist())
  
-        if len(multi_pairs) > 0:
-            for corr, direction in multi_pairs:
-                corr_analyzed = df_analyzed[
-                    (df_analyzed['corridor_name'] == corr) & (df_analyzed['direction_track'] == direction)
-                ]
-                corr_metrics_sorted = metrics[
-                    (metrics['corridor_name'] == corr) & (metrics['direction_track'] == direction)
-                ].sort_values('mean_sequence_order')
-                seg_order = corr_metrics_sorted['segment_uid'].tolist()
-                seg_labels = corr_metrics_sorted['segment_id'].str.replace(
-                    f"{corr} ({direction}) - ", "", regex=False
-                ).tolist()
-                seg_class = corr_metrics_sorted.set_index('segment_uid')['classification'].to_dict()
+        for corr in all_corridors_sorted:
+            corr_analyzed = df_analyzed[df_analyzed['corridor_name'] == corr]
+            corr_metrics_sorted = metrics[metrics['corridor_name'] == corr].sort_values('mean_sequence_order')
+            seg_order = corr_metrics_sorted['segment_uid'].tolist()
+            seg_labels = corr_metrics_sorted['segment_id'].str.replace(f"{corr} - ", "", regex=False).tolist()
+            seg_class = corr_metrics_sorted.set_index('segment_uid')['classification'].to_dict()
  
-                if len(seg_order) < 2:
-                    continue
+            pivot = corr_analyzed.pivot_table(
+                index='segment_uid', columns='hour_of_day', values='is_congested', aggfunc='mean'
+            )
+            pivot = pivot.reindex(seg_order)
+            pivot.index = seg_labels
  
-                pivot = corr_analyzed.pivot_table(
-                    index='segment_uid', columns='hour_of_day', values='is_congested', aggfunc='mean'
-                )
-                pivot = pivot.reindex(seg_order)
-                pivot.index = seg_labels
+            fig_cascade, ax_cascade = plt.subplots(figsize=(12, max(0.8 * len(seg_order), 1.2) + 1.2))
+            sns.heatmap(
+                pivot, cmap='YlOrRd', vmin=0, vmax=1, ax=ax_cascade,
+                cbar_kws={'label': 'Congestion frequency'}, linewidths=0.4, linecolor='white'
+            )
  
-                fig_cascade, ax_cascade = plt.subplots(figsize=(12, max(0.8 * len(seg_order), 1.6) + 1.2))
-                sns.heatmap(
-                    pivot, cmap='YlOrRd', vmin=0, vmax=1, ax=ax_cascade,
-                    cbar_kws={'label': 'Congestion frequency'}, linewidths=0.4, linecolor='white'
-                )
+            for tick_label, seg_uid in zip(ax_cascade.get_yticklabels(), seg_order):
+                status = seg_class.get(seg_uid, "No structural issue detected")
+                tick_label.set_color(STATUS_COLORS[status])
+                tick_label.set_fontweight('bold')
  
-                for tick_label, seg_uid in zip(ax_cascade.get_yticklabels(), seg_order):
-                    status = seg_class.get(seg_uid, "Untestable — no adjacent sensor")
-                    tick_label.set_color(STATUS_COLORS[status])
-                    tick_label.set_fontweight('bold')
- 
-                ax_cascade.set_title(f"Cascade profile: {corr} ({direction})", fontsize=11, fontweight='bold', color='#1a1a2e', pad=10)
-                ax_cascade.set_xlabel("Hour of day", fontsize=9, fontweight='bold', color='#1a1a2e')
-                ax_cascade.set_ylabel("Segment (upstream → downstream)", fontsize=9, fontweight='bold', color='#1a1a2e')
-                plt.tight_layout()
-                st.pyplot(fig_cascade)
-        else:
-            st.write("No corridor/direction pair in the current dataset has more than one monitored segment.")
+            n_segs = len(seg_order)
+            subtitle = "single-segment corridor" if n_segs == 1 else f"{n_segs} segments"
+            ax_cascade.set_title(f"{corr} ({subtitle})", fontsize=11, fontweight='bold', color='#1a1a2e', pad=10)
+            ax_cascade.set_xlabel("Hour of day", fontsize=9, fontweight='bold', color='#1a1a2e')
+            ax_cascade.set_ylabel("Segment (upstream → downstream)", fontsize=9, fontweight='bold', color='#1a1a2e')
+            plt.tight_layout()
+            st.pyplot(fig_cascade)
  
         # ==============================================================================
         # 8. TOP SEGMENT PROFILES (weekday vs weekend)
@@ -796,26 +768,25 @@ def main():
  
         plt.tight_layout()
         st.pyplot(fig3)
-        st.caption("A profile staying above the red threshold line for an extended stretch, on both weekdays and weekends, points to a structural constraint rather than ordinary peak demand. The colored strip on the left of each panel matches the segment's status (red/yellow/green/blue).")
+        st.caption("A profile staying above the red threshold line for an extended stretch, on both weekdays and weekends, points to a structural constraint rather than ordinary peak demand. The colored strip on the left of each panel matches the segment's status (red/yellow/green).")
  
         # ==============================================================================
-        # 9. EMPIRICAL CASE STUDY
+        # 9. EMPIRICAL CASE STUDY (multi-segment corridors — this is where an upstream
+        # comparison is actually possible, so it's the most informative chart for
+        # visually proving a spillover chain)
         # ==============================================================================
-        if len(multi_pairs) > 0:
+        multi_corridors = sorted(metrics.loc[metrics['multi_segment_corridor'], 'corridor_name'].unique().tolist())
+        if len(multi_corridors) > 0:
             st.write("---")
             section_title("Empirical Verification: Root-Cause Events")
-            for corr, direction in multi_pairs:
-                case_df = df_analyzed[
-                    (df_analyzed['corridor_name'] == corr) & (df_analyzed['direction_track'] == direction)
-                ]
-                corr_metrics_map = metrics[
-                    (metrics['corridor_name'] == corr) & (metrics['direction_track'] == direction)
-                ].set_index('segment_uid')['classification']
+            for corr in multi_corridors:
+                case_df = df_analyzed[df_analyzed['corridor_name'] == corr]
+                corr_metrics_map = metrics[metrics['corridor_name'] == corr].set_index('segment_uid')['classification']
  
                 fig4, ax4 = plt.subplots(figsize=(12, 5.0))
                 for seg_uid, seg_sub in case_df.groupby('segment_uid'):
                     seg_label = metrics.loc[metrics['segment_uid'] == seg_uid, 'segment_id'].iloc[0]
-                    seg_status = corr_metrics_map.get(seg_uid, "Untestable — no adjacent sensor")
+                    seg_status = corr_metrics_map.get(seg_uid, "No structural issue detected")
                     hourly = seg_sub.groupby('hour_of_day')['travel_time_index_tti'].mean()
                     ax4.plot(hourly.index, hourly.values, marker='o', markersize=4, linewidth=1.6,
                              color=STATUS_COLORS[seg_status], label=seg_label)
@@ -826,7 +797,7 @@ def main():
                         ax4.scatter(rc_hourly.index, rc_hourly.values, color='#e74c3c', zorder=6, s=130,
                                     marker='X', edgecolors='white', linewidths=1.0, label=f"Verified breakdown ({seg_label})")
  
-                ax4.set_title(f"Corridor: {corr} ({direction})", fontsize=11, fontweight='bold', pad=12, color='#1a1a2e')
+                ax4.set_title(f"Corridor: {corr}", fontsize=11, fontweight='bold', pad=12, color='#1a1a2e')
                 ax4.set_xlabel("Hour of day", fontweight='bold', fontsize=9, color='#1a1a2e')
                 ax4.set_ylabel("Mean TTI", fontweight='bold', fontsize=9, color='#1a1a2e')
                 ax4.set_xlim(0, 23)
@@ -839,26 +810,25 @@ def main():
                 plt.tight_layout()
                 st.pyplot(fig4)
  
-                n_rc_total = int(case_df['root_cause_event'].sum(skipna=True))
+                n_rc_total = int(case_df['root_cause_event'].sum())
                 st.caption(
                     f"Red X markers show intervals where a link broke down while its upstream neighbor stayed clear "
                     f"({n_rc_total} verified instances over the observation window)."
                 )
  
         # ==============================================================================
-        # 9b. MACHINE LEARNING CROSS-CHECK: LOGISTIC REGRESSION BREAKDOWN RISK MODEL
+        # 9b. MACHINE LEARNING CROSS-CHECK: SCIKIT-LEARN LOGISTIC REGRESSION
         # A data-driven second opinion on the rule-based classification above, trained
-        # network-wide (every segment, every corridor, every direction) so it still
-        # answers the same "rank all segments" business question — implemented from
-        # scratch with NumPy so it needs no scikit-learn dependency.
+        # network-wide (every segment, every corridor) so it still answers the same
+        # "rank all segments" business question and forecasts near-future risk.
         # ==============================================================================
         st.write("---")
         section_title("Machine Learning Cross-Check: Predicted Breakdown Risk")
         st.markdown(
-            '<div class="h1-section-sub">A logistic regression trained on the full network\'s history predicts the '
-            'probability that a segment will be congested in the next interval, given its current state — an '
-            'independent, data-driven second opinion on the rule-based classification above, not a replacement for '
-            'it. Built from scratch with NumPy, so it runs with no scikit-learn dependency.</div>',
+            '<div class="h1-section-sub">A scikit-learn logistic regression trained on the full network\'s history '
+            'predicts the probability that a segment will be congested in the <b>next interval</b>, given its '
+            'current state — an independent, data-driven second opinion on the rule-based classification above, '
+            'and a genuine short-horizon forecast, not a replacement for the rule-based test.</div>',
             unsafe_allow_html=True
         )
  
@@ -880,54 +850,36 @@ def main():
                            'Hour (sin)', 'Hour (cos)', 'Historical congestion rate']
  
         if len(model_df) >= 50 and model_df['target'].nunique() == 2:
-            X_raw = model_df[feature_cols].values.astype(float)
-            y = model_df['target'].values.astype(float)
+            X = model_df[feature_cols].values.astype(float)
+            y = model_df['target'].values.astype(int)
  
-            feat_mean = X_raw.mean(axis=0)
-            feat_std = X_raw.std(axis=0)
-            feat_std[feat_std == 0] = 1.0
-            X_scaled = (X_raw - feat_mean) / feat_std
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.3, random_state=7, stratify=y
+            )
  
-            rng = np.random.RandomState(7)
-            shuffle_idx = rng.permutation(len(X_scaled))
-            split = int(len(X_scaled) * 0.7)
-            train_idx, test_idx = shuffle_idx[:split], shuffle_idx[split:]
-            X_train, X_test = X_scaled[train_idx], X_scaled[test_idx]
-            y_train, y_test = y[train_idx], y[test_idx]
+            scaler = StandardScaler()
+            X_train_scaled = scaler.fit_transform(X_train)
+            X_test_scaled = scaler.transform(X_test)
+            X_all_scaled = scaler.transform(X)
  
-            def _sigmoid(z):
-                return 1.0 / (1.0 + np.exp(-np.clip(z, -30, 30)))
+            clf = LogisticRegression(max_iter=1000, random_state=7)
+            clf.fit(X_train_scaled, y_train)
  
-            Xb_train = np.hstack([np.ones((len(X_train), 1)), X_train])
-            weights = np.zeros(Xb_train.shape[1])
-            lr, epochs = 0.2, 500
-            for _ in range(epochs):
-                preds = _sigmoid(Xb_train @ weights)
-                grad = Xb_train.T @ (preds - y_train) / len(y_train)
-                weights -= lr * grad
+            proba_test = clf.predict_proba(X_test_scaled)[:, 1]
+            proba_all = clf.predict_proba(X_all_scaled)[:, 1]
+            preds_test = clf.predict(X_test_scaled)
  
-            Xb_test = np.hstack([np.ones((len(X_test), 1)), X_test])
-            proba_test = _sigmoid(Xb_test @ weights)
-            Xb_all = np.hstack([np.ones((len(X_scaled), 1)), X_scaled])
-            proba_all = _sigmoid(Xb_all @ weights)
-            coefs = weights[1:]
-            acc = float(((proba_test >= 0.5).astype(int) == y_test).mean())
- 
-            pos = proba_test[y_test == 1]
-            neg = proba_test[y_test == 0]
-            if len(pos) > 0 and len(neg) > 0:
-                ranks = pd.Series(np.concatenate([pos, neg])).rank().values
-                auc = (ranks[:len(pos)].sum() - len(pos) * (len(pos) + 1) / 2) / (len(pos) * len(neg))
-            else:
-                auc = np.nan
+            acc = accuracy_score(y_test, preds_test)
+            auc = roc_auc_score(y_test, proba_test) if len(np.unique(y_test)) == 2 else np.nan
+            coefs = clf.coef_[0]
  
             model_df['ml_risk_score'] = proba_all
  
             kpi_ml = [
-                ("Model", "Logistic regression (NumPy)", "#3498db", "Trained on full network history"),
+                ("Model", "Logistic regression (scikit-learn)", "#3498db", "Trained on full network history"),
                 ("Test accuracy", f"{acc*100:.1f}%", "#2ecc71", "Held-out 30% of intervals"),
                 ("Test AUC", f"{auc:.3f}" if pd.notna(auc) else "N/A", "#f1c40f", "Ranking quality of risk scores"),
-                ("Intervals modeled", f"{len(model_df):,}", "#e74c3c", "Across every corridor and direction"),
+                ("Intervals modeled", f"{len(model_df):,}", "#e74c3c", "Across every corridor"),
             ]
             render_kpi_row(kpi_ml)
             st.write("")
@@ -975,11 +927,13 @@ def main():
  
         badge_color = STATUS_COLORS[top_row['classification']]
         render_callout(
-            f"<b>Top priority segment: <code>{top_row['segment_id']}</code></b> ({top_row['shapefile_segment_name']}) — "
-            f"status: <b>{top_row['classification']}</b>, priority tier: <b>{top_row['priority_tier']}</b><br><br>"
+            f"<b>Top priority segment (highest MCBI): <code>{top_row['segment_id']}</code></b> "
+            f"({top_row['shapefile_segment_name']}) — status: <b>{top_row['classification']}</b>, priority tier: "
+            f"<b>{top_row['priority_tier']}</b><br><br>"
             f"• Severity: P90 TTI of {top_row['p90_tti']:.2f} — travel times during congestion more than double free-flow conditions.<br>"
             f"• Persistence: congested in {top_row['pct_time_congested']:.2f}% of all observed intervals — a recurring issue, not a one-off.<br>"
-            f"• Onset: breaks down by an average of {top_row['mean_onset_hour']:.1f}:00, earlier than normal commuter demand growth would explain.<br><br>"
+            f"• Onset: breaks down by an average of {top_row['mean_onset_hour']:.1f}:00, earlier than normal commuter demand growth would explain.<br>"
+            f"• Verified root-cause events: {int(top_row['root_cause_events'])}.<br><br>"
             f"<b>Action for field teams:</b> {top_row['recommended_action']}",
             border_color=badge_color
         )
@@ -991,15 +945,6 @@ def main():
                 f'<span style="color:{dot_color}; font-weight:bold;">●</span> `{row["segment_id"]}` — '
                 f'{row["classification"]} ({row["priority_tier"]} priority): {row["recommended_action"]}',
                 unsafe_allow_html=True
-            )
- 
-        untestable_count = int((metrics['classification'] == "Untestable — no adjacent sensor").sum())
-        if untestable_count > 0:
-            render_callout(
-                f"<b>Sensor coverage gap:</b> {untestable_count} of {len(metrics)} monitored segments sit on "
-                f"single-segment corridors and cannot be tested for upstream causality yet. Prioritize sensor "
-                f"expansion at the highest-ranked untestable segments before committing capital works there.",
-                border_color="#3498db"
             )
  
    # =============================================================================
