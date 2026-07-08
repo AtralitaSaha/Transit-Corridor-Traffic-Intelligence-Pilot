@@ -611,7 +611,7 @@ def main():
         # Fix: Use applymap for background gradient instead of background_gradient which is deprecated
         corridor_styled = corridor_rankings.style.format(
             {'mean_tti': '{:.3f}', 'max_tti': '{:.2f}'}
-        ).applymap(
+        ).map(
             lambda x: 'background-color: #fde0dd' if x == corridor_rankings['mean_tti'].max() else '',
             subset=['mean_tti']
         ).set_table_styles([
