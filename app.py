@@ -17,7 +17,7 @@ try:
     SKLEARN_AVAILABLE = True
 except ImportError:
     SKLEARN_AVAILABLE = False
-    st.warning(" scikit-learn is not installed. Machine learning features will be disabled. Install with: pip install scikit-learn"
+    st.warning(" scikit-learn is not installed. Machine learning features will be disabled. Install with: pip install scikit-learn")
 
 
 # 1. Page Configuration & Professional Engineering Styling Enforcements
