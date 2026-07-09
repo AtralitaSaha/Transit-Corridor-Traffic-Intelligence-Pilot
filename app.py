@@ -1786,7 +1786,19 @@ def main():
             tstat_full = np.divide(beta_full, se_full, out=np.zeros_like(beta_full), where=se_full != 0)
  
             def _norm_cdf(z):
-                return 0.5 * (1 + np.vectorize(math.erf)(z / np.sqrt(2)))
+                # Self-contained, fully-vectorized standard normal CDF via the
+                # Abramowitz & Stegun (7.1.26) erf approximation, using only
+                # NumPy — no dependency on Python's `math` module, so this
+                # can't break due to a missing `import math` in any deployed
+                # copy of this file, and it's faster than np.vectorize(math.erf).
+                z = np.asarray(z, dtype=float)
+                x = np.abs(z) / np.sqrt(2.0)
+                a1, a2, a3, a4, a5 = 0.254829592, -0.284496736, 1.421413741, -1.453152027, 1.061405429
+                p = 0.3275911
+                t = 1.0 / (1.0 + p * x)
+                y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * np.exp(-x * x)
+                erf_approx = np.sign(z) * y
+                return 0.5 * (1 + erf_approx)
             pvals_full = 2 * (1 - _norm_cdf(np.abs(tstat_full)))
  
             coef_report = pd.DataFrame({
@@ -1856,6 +1868,7 @@ def main():
             f"sensitivity slope.",
             border_color="#e74c3c"
         )
+ 
  
 
     # =============================================================================
