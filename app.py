@@ -1014,12 +1014,12 @@ def main():
 
         inject_professional_style()
         apply_pro_plot_style()
-
+ 
         render_page_header(
             "Hypothesis 2 · Temporal Peak Profiling (Atralita)",
             "Exact failure-and-recovery timing of each corridor, benchmarked weekday against weekend"
         )
-
+ 
         section_title("Business Question")
         st.markdown(
             "**At what precise minute does a road's capacity fail, how long does it take for the traffic to clear "
@@ -1043,18 +1043,18 @@ def main():
             border_color="#3498db"
         )
         st.write("---")
-
+ 
         if 'execution_timestamp' in df_fetched.columns:
             df_fetched['time_of_day'] = df_fetched['execution_timestamp'].dt.strftime('%H:%M')
         else:
             df_fetched['time_of_day'] = df_fetched['derived_hour'].astype(str).str.zfill(2) + ":00"
-
+ 
         df_fetched['failure_threshold'] = df_fetched.groupby('corridor_name')['travel_time_index_tti'].transform(lambda x: x.quantile(0.90))
         df_fetched['is_failed'] = df_fetched['travel_time_index_tti'] > df_fetched['failure_threshold']
         
         if 'is_weekend' not in df_fetched.columns:
             df_fetched['is_weekend'] = 0
-
+ 
         unique_corridors = df_fetched['corridor_name'].unique()
         peak_summary_records = []
         
@@ -1088,7 +1088,7 @@ def main():
                 })
                 
         peak_report_df = pd.DataFrame(peak_summary_records)
-
+ 
         # KPI header row
         worst_row = peak_report_df.sort_values('peak_tti', ascending=False).iloc[0] if len(peak_report_df) else None
         avg_failure_rate = peak_report_df['failure_rate'].mean() * 100 if len(peak_report_df) else 0.0
@@ -1105,10 +1105,10 @@ def main():
         render_kpi_row(kpi_defs)
         st.write("")
         st.write("---")
-
+ 
         section_title("Peak-Hour Identification & Operational Clearance Timeline")
         st.dataframe(peak_report_df, use_container_width=True)
-
+ 
         section_title("Infrastructure Failure Rate Matrix: Weekday Commutes vs. Weekend Leisure Volumes")
         fig_bar, ax_bar = plt.subplots(figsize=(10, 4.5))
         wd_bar_data = peak_report_df[peak_report_df['day_profile'] == 'Weekday']
@@ -1128,32 +1128,40 @@ def main():
         style_axes(ax_bar)
         plt.tight_layout()
         st.pyplot(fig_bar)
-
+ 
         # ==============================================================================
-        # NEW: CORRIDOR FAILURE HEATMAPS — hour of day vs day type, all five corridors
+        # CORRIDOR CONGESTION-RATIO HEATMAPS — hour of day vs day type, all corridors
         # ==============================================================================
         st.write("---")
-        section_title("Corridor Failure Heatmaps — Hour of Day vs. Day Type")
+        section_title("Hourly Congestion Ratio Heatmaps — All Corridors")
         st.markdown(
-            '<div class="h1-section-sub">Darker cells mark the hours each corridor runs hottest, split weekday vs '
-            'weekend, so shift planners can see exactly when — and how consistently — each corridor needs coverage.</div>',
+            '<div class="h1-section-sub">One heatmap per corridor. Cell value = <b>congestion ratio</b> — the '
+            'fraction of readings in that hour classified as failed (TTI above the corridor\'s own 90th-percentile '
+            'threshold) — not raw TTI severity, so ratios are directly comparable across corridors of different '
+            'baseline speeds. Weekday and weekend are separate rows. Central-Puzhal and Puzhal-Central are shown '
+            'as two separate corridors, never merged.</div>',
             unsafe_allow_html=True
         )
         for corr in unique_corridors:
             corr_df = df_fetched[df_fetched['corridor_name'] == corr].copy()
             corr_df['day_label'] = np.where(corr_df['is_weekend'] == 1, 'Weekend', 'Weekday')
-            pivot = corr_df.pivot_table(index='day_label', columns='derived_hour', values='travel_time_index_tti', aggfunc='mean')
+            pivot = corr_df.pivot_table(index='day_label', columns='derived_hour', values='is_failed', aggfunc='mean')
             pivot = pivot.reindex(['Weekday', 'Weekend'])
-
+            pivot = pivot.reindex(columns=range(24))
+ 
             fig_hm, ax_hm = plt.subplots(figsize=(12, 2.3))
-            sns.heatmap(pivot, cmap='YlOrRd', ax=ax_hm, cbar_kws={'label': 'Mean TTI'}, linewidths=0.4, linecolor='white')
-            ax_hm.set_title(f"{corr} — Hourly Failure Heatmap", fontsize=11, fontweight='bold', color='#1a1a2e', pad=8)
+            sns.heatmap(
+                pivot, cmap='YlOrRd', vmin=0, vmax=1, ax=ax_hm,
+                cbar_kws={'label': 'Congestion ratio'}, linewidths=0.4, linecolor='white'
+            )
+            ax_hm.set_title(f"{corr} — Hourly Congestion Ratio", fontsize=11, fontweight='bold', color='#1a1a2e', pad=8)
             ax_hm.set_xlabel("Hour of day", fontsize=9, color='#1a1a2e', fontweight='bold')
             ax_hm.set_ylabel("")
             ax_hm.tick_params(colors='#4a5568')
             plt.tight_layout()
             st.pyplot(fig_hm)
-
+ 
+ 
         st.write("---")
         section_title("Diurnal Velocity Degradation Tracking per Network Corridor")
         for corr in unique_corridors:
@@ -1189,7 +1197,137 @@ def main():
                 
             st.caption(f"Network Corridor Workspace Profile: {corr.upper()}")
             st.pyplot(fig_line)
-
+ 
+        # ==============================================================================
+        # MACHINE LEARNING CROSS-CHECK: SMOOTHED FAILURE-PROBABILITY MODEL
+        # A logistic regression (built from scratch with NumPy, no sklearn dependency)
+        # gives a noise-reduced, statistically-fitted second opinion on the empirical
+        # "peak hour" identification above. The empirical peak is just the single
+        # highest-TTI hour bin in the raw data — it can be pulled around by a handful
+        # of noisy readings. The model instead learns a smooth diurnal curve per
+        # corridor (via hour-of-day x corridor interaction terms) and reports where
+        # *that* curve peaks, which is far less sensitive to any single noisy hour.
+        # ==============================================================================
+        st.write("---")
+        section_title("Machine Learning Cross-Check: Smoothed Failure-Probability Model")
+        st.markdown(
+            '<div class="h1-section-sub">A logistic regression predicts the probability that any given hour / '
+            'day-type / corridor combination will be a failed (breakdown) interval. Corridor x hour-of-day '
+            'interaction terms let each corridor have its own diurnal shape rather than forcing one network-wide '
+            'curve. This is a statistically smoothed second opinion on the empirical peak-hour finding above — not '
+            'a replacement for it. Built from scratch with NumPy.</div>',
+            unsafe_allow_html=True
+        )
+ 
+        ml2_df = df_fetched.copy()
+        ml2_df['hour_sin'] = np.sin(2 * np.pi * ml2_df['derived_hour'] / 24.0)
+        ml2_df['hour_cos'] = np.cos(2 * np.pi * ml2_df['derived_hour'] / 24.0)
+ 
+        corr_dummies = pd.get_dummies(ml2_df['corridor_name'], prefix='corr', drop_first=True).astype(float)
+        inter_sin = corr_dummies.multiply(ml2_df['hour_sin'], axis=0)
+        inter_sin.columns = [c + '_x_hoursin' for c in corr_dummies.columns]
+        inter_cos = corr_dummies.multiply(ml2_df['hour_cos'], axis=0)
+        inter_cos.columns = [c + '_x_hourcos' for c in corr_dummies.columns]
+ 
+        feature_frame = pd.concat(
+            [ml2_df[['hour_sin', 'hour_cos', 'is_weekend']].astype(float), corr_dummies, inter_sin, inter_cos],
+            axis=1
+        )
+        target_vec = ml2_df['is_failed'].astype(float).values
+ 
+        if len(feature_frame) >= 100 and len(np.unique(target_vec)) == 2:
+            X_raw = feature_frame.values
+            feat_mean = X_raw.mean(axis=0)
+            feat_std = X_raw.std(axis=0)
+            feat_std[feat_std == 0] = 1.0
+            X_scaled = (X_raw - feat_mean) / feat_std
+ 
+            rng = np.random.RandomState(7)
+            shuffle_idx = rng.permutation(len(X_scaled))
+            split = int(len(X_scaled) * 0.7)
+            train_idx, test_idx = shuffle_idx[:split], shuffle_idx[split:]
+            X_train, X_test = X_scaled[train_idx], X_scaled[test_idx]
+            y_train, y_test = target_vec[train_idx], target_vec[test_idx]
+ 
+            def _sigmoid2(z):
+                return 1.0 / (1.0 + np.exp(-np.clip(z, -30, 30)))
+ 
+            Xb_train = np.hstack([np.ones((len(X_train), 1)), X_train])
+            weights2 = np.zeros(Xb_train.shape[1])
+            lr2, epochs2 = 0.3, 1000
+            for _ in range(epochs2):
+                preds2 = _sigmoid2(Xb_train @ weights2)
+                grad2 = Xb_train.T @ (preds2 - y_train) / len(y_train)
+                weights2 -= lr2 * grad2
+ 
+            Xb_test = np.hstack([np.ones((len(X_test), 1)), X_test])
+            proba_test2 = _sigmoid2(Xb_test @ weights2)
+            acc2 = float(((proba_test2 >= 0.5).astype(int) == y_test).mean())
+ 
+            pos2 = proba_test2[y_test == 1]
+            neg2 = proba_test2[y_test == 0]
+            if len(pos2) > 0 and len(neg2) > 0:
+                ranks2 = pd.Series(np.concatenate([pos2, neg2])).rank().values
+                auc2 = (ranks2[:len(pos2)].sum() - len(pos2) * (len(pos2) + 1) / 2) / (len(pos2) * len(neg2))
+            else:
+                auc2 = np.nan
+ 
+            Xb_all = np.hstack([np.ones((len(X_scaled), 1)), X_scaled])
+            ml2_df['ml_failure_prob'] = _sigmoid2(Xb_all @ weights2)
+ 
+            kpi_ml2 = [
+                ("Model", "Logistic regression (NumPy)", "#3498db", "Corridor x hour-of-day interactions"),
+                ("Test accuracy", f"{acc2*100:.1f}%", "#2ecc71", "Held-out 30% of intervals"),
+                ("Test AUC", f"{auc2:.3f}" if pd.notna(auc2) else "N/A", "#f1c40f", "Ranking quality of risk scores"),
+                ("Network base failure rate", f"{target_vec.mean()*100:.1f}%", "#e74c3c", "Share of all intervals failed"),
+            ]
+            render_kpi_row(kpi_ml2)
+            st.write("")
+ 
+            peak_compare_records = []
+            n_corr_for_plot = min(len(unique_corridors), 6)
+            fig_smooth, axes_smooth = plt.subplots(1, n_corr_for_plot, figsize=(4.2 * n_corr_for_plot, 3.4), sharey=True)
+            if n_corr_for_plot == 1:
+                axes_smooth = [axes_smooth]
+ 
+            for ax_s, corr in zip(axes_smooth, unique_corridors[:n_corr_for_plot]):
+                sub_emp = ml2_df[(ml2_df['corridor_name'] == corr) & (ml2_df['is_weekend'] == 0)]
+                emp_curve = sub_emp.groupby('derived_hour')['is_failed'].mean().reindex(range(24))
+                model_curve = sub_emp.groupby('derived_hour')['ml_failure_prob'].mean().reindex(range(24))
+ 
+                emp_peak_hr = emp_curve.idxmax() if emp_curve.notna().any() else None
+                model_peak_hr = model_curve.idxmax() if model_curve.notna().any() else None
+                peak_compare_records.append({
+                    'corridor': corr,
+                    'empirical_peak_hour': emp_peak_hr,
+                    'model_smoothed_peak_hour': model_peak_hr,
+                    'agreement': "Match" if emp_peak_hr == model_peak_hr else f"Differs by {abs((emp_peak_hr or 0) - (model_peak_hr or 0))}h"
+                })
+ 
+                ax_s.plot(emp_curve.index, emp_curve.values, color='#95a5a6', marker='o', markersize=2.5,
+                          linewidth=1.2, linestyle=':', label='Empirical (raw)')
+                ax_s.plot(model_curve.index, model_curve.values, color='#e74c3c', linewidth=2.0,
+                          label='Model-smoothed')
+                ax_s.set_title(corr, fontsize=9, fontweight='bold', color='#1a1a2e')
+                ax_s.set_xlabel("Hour", fontsize=8)
+                ax_s.grid(True, linestyle=':', alpha=0.4)
+                ax_s.legend(loc='upper left', fontsize=7)
+                style_axes(ax_s)
+ 
+            axes_smooth[0].set_ylabel("Failure probability", fontsize=8, fontweight='bold', color='#1a1a2e')
+            plt.tight_layout()
+            st.pyplot(fig_smooth)
+            st.caption(
+                "Grey dotted = raw empirical failure rate per hour (noisy, small per-hour sample). Red solid = "
+                "model-smoothed probability. Where the two diverge sharply, the empirical peak-hour finding is "
+                "likely being driven by a handful of readings rather than a stable structural pattern."
+            )
+ 
+            peak_compare_df = pd.DataFrame(peak_compare_records)
+            st.dataframe(peak_compare_df, use_container_width=True)
+        else:
+            st.info("Not enough labeled intervals (or only one outcome class present) in this dataset yet to train a reliable model.")
+ 
         st.write("---")
         section_title("Executive Summary and Next Steps for Engineering Teams")
         if worst_row is not None:
@@ -1201,6 +1339,7 @@ def main():
                 f"with this failure window rather than a fixed generic peak-hour block.",
                 border_color="#e74c3c"
             )
+ 
 
     # =============================================================================
     # MODULE TAB 3: HYPOTHESIS 3 - GEOMETRIC CONSTRAINTS — (ARUSHI)
