@@ -1,4 +1,5 @@
 import os
+import re
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -49,9 +50,6 @@ st.markdown("""
 
 # =============================================================================
 # SHARED PROFESSIONAL STYLING HELPERS - Atralita
-# Used by Hypotheses 1, 2, 4, 7 and 8 so every "engineering-grade" tab shares
-# the same visual language: KPI cards, callouts, section titles and clean
-# matplotlib axes. Factored out here once instead of re-declared per tab.
 # =============================================================================
 STATUS_COLORS = {
     "Confirmed root cause": "#e74c3c",              # red    — act now
@@ -160,6 +158,54 @@ def render_kpi_row(kpi_defs):
                 f'</div>',
                 unsafe_allow_html=True
             )
+
+
+_CORRIDOR_DESCRIPTOR_WORDS = {
+    'ATGRADE', 'FLYOVER', 'ELEVATED', 'RAMP', 'ONRAMP', 'OFFRAMP', 'JUNCTION',
+    'BRIDGE', 'UNDERPASS', 'OVERPASS', 'EXPRESSWAY', 'CORRIDOR', 'LINK',
+    'SEGMENT', 'TRACK', 'MAINLINE', 'MAIN', 'ROAD', 'ROUTE',
+}
+ 
+ 
+def _corridor_location_tokens(identifier):
+    """Strip file extensions, descriptor words, and trailing numeric IDs from a
+    segment identifier, leaving just the ordered location-name tokens."""
+    s = str(identifier).upper()
+    s = re.sub(r'\.SHP$', '', s)
+    raw_tokens = re.split(r'[_\-\s]+', s)
+    return [t for t in raw_tokens if t and not t.isdigit() and t not in _CORRIDOR_DESCRIPTOR_WORDS]
+ 
+ 
+def resolve_directional_corridors(df, corridor_col='corridor_name'):
+    """Return a corrected corridor_name Series where any corridor that silently
+    conflates two opposite one-way directions (same location tokens, reversed
+    order) is split into direction-aware names — fully data-driven, no
+    hardcoded corridor names required."""
+    id_source = df['segment_uid'] if 'segment_uid' in df.columns else df['shapefile_segment_name']
+    direction_key = id_source.apply(lambda x: '_'.join(_corridor_location_tokens(x)))
+    canonical_key = id_source.apply(lambda x: '_'.join(sorted(_corridor_location_tokens(x))))
+ 
+    lookup = pd.DataFrame({
+        'corridor_name': df[corridor_col].astype(str).values,
+        'direction_key': direction_key.values,
+        'canonical_key': canonical_key.values,
+    }, index=df.index)
+ 
+    # Within each (given corridor_name, canonical/location-set) group, if more
+    # than one distinct direction_key shows up, that group is a conflated
+    # bidirectional pair and needs splitting.
+    n_distinct_directions = lookup.groupby(['corridor_name', 'canonical_key'])['direction_key'] \
+        .transform('nunique')
+    is_conflated = (n_distinct_directions > 1).values
+    
+    def _to_readable(dk):
+        return '-'.join(word.capitalize() for word in dk.split('_')) if dk else dk
+ 
+    readable_direction_name = direction_key.apply(_to_readable)
+    resolved_corridor = np.where(is_conflated, readable_direction_name.values, df[corridor_col].values)
+    return pd.Series(resolved_corridor, index=df.index)
+
+ 
 # =============================================================================
 # 2. MASTER ENGINE INTERFACE CONTROLLER
 # =============================================================================
@@ -265,7 +311,7 @@ def main():
         st.table(buffer_summary)
 
     # =============================================================================
-    # MODULE TAB 1: HYPOTHESIS 1 - SYSTEMIC BOTTLENECK LOCALIZATION
+    # HYPOTHESIS 1 - SYSTEMIC BOTTLENECK LOCALIZATION
     # =============================================================================
     elif selected_tab == "Hypothesis 1: Systemic Bottleneck Localization":
  
@@ -478,7 +524,7 @@ def main():
         )
  
         # ----- Classification: answers the hypothesis question directly, per segment -----
-        # No more "Untestable". Every segment lands in exactly one of three buckets.
+        # Every segment lands in exactly one of three buckets.
         def _classify(row):
             if row['root_cause_events'] >= MIN_ROOT_CAUSE_EVENTS:
                 return "Confirmed root cause"
@@ -608,12 +654,8 @@ def main():
             congested_intervals=('is_congested', 'sum'),
         ).sort_values(by='mean_tti', ascending=False).reset_index()
         
-        # Fix: Use applymap for background gradient instead of background_gradient which is deprecated
         corridor_styled = corridor_rankings.style.format(
             {'mean_tti': '{:.3f}', 'max_tti': '{:.2f}'}
-        ).map(
-            lambda x: 'background-color: #fde0dd' if x == corridor_rankings['mean_tti'].max() else '',
-            subset=['mean_tti']
         ).set_table_styles([
             {'selector': 'th', 'props': [('background-color', '#1a1a2e'), ('color', 'white'),
                                           ('font-weight', '600'), ('font-size', '12.5px'),
@@ -668,52 +710,58 @@ def main():
         st.caption("The red block is the only component tied to confirmed causal evidence; a segment with a tall red block is a verified root cause. A segment can still rank highly with a small red block if the other three components are large enough — that's the MCBI-vs-declared-bottleneck gap explained above.")
  
         # ==============================================================================
-        # 7. SEGMENT-WISE CONGESTION HEATMAPS BY CORRIDOR (replaces the cascade timeline)
+        # 7. SEGMENT-WISE CONGESTION HEATMAP (single combined view, all corridors)
         # ==============================================================================
         st.write("---")
-        section_title("Segment-Wise Congestion Heatmaps by Corridor")
+        section_title("Segment-Wise Congestion Heatmap - All Corridors")
         st.markdown(
-            '<div class="h1-section-sub">Every corridor in the dataset, one heatmap each. Segments are stacked in '
-            'physical order (top = most upstream, bottom = most downstream). Cell color is the fraction of that '
-            'hour spent congested, so a red band on a downstream segment trailing an hour behind a red band '
-            'upstream is queue spillover — not an independent failure. Segment labels are color-coded by status: '
-            'red = confirmed root cause, yellow = likely spillover, green = no structural issue.</div>',
+            '<div class="h1-section-sub">One combined heatmap. X-axis = every monitored segment across all 5 '
+            'corridors (Central-Puzhal and Puzhal-Central kept as two separate one-way corridors, never merged). '
+            'Y-axis = hour of day. Cell color = congestion strength (fraction of that hour spent congested for '
+            'that segment). Segment labels on the x-axis are color-coded by status: red = confirmed root cause, '
+            'yellow = likely spillover, green = no structural issue.</div>',
             unsafe_allow_html=True
         )
  
-        all_corridors_sorted = sorted(metrics['corridor_name'].unique().tolist())
+        seg_order_all = metrics.sort_values(['corridor_name', 'mean_sequence_order'])['segment_uid'].tolist()
+        seg_label_map = metrics.set_index('segment_uid')['segment_id'].to_dict()
+        seg_class_map = metrics.set_index('segment_uid')['classification'].to_dict()
  
-        for corr in all_corridors_sorted:
-            corr_analyzed = df_analyzed[df_analyzed['corridor_name'] == corr]
-            corr_metrics_sorted = metrics[metrics['corridor_name'] == corr].sort_values('mean_sequence_order')
-            seg_order = corr_metrics_sorted['segment_uid'].tolist()
-            seg_labels = corr_metrics_sorted['segment_id'].str.replace(f"{corr} - ", "", regex=False).tolist()
-            seg_class = corr_metrics_sorted.set_index('segment_uid')['classification'].to_dict()
+        heat_pivot = df_analyzed.pivot_table(
+            index='hour_of_day', columns='segment_uid', values='is_congested', aggfunc='mean'
+        )
+        heat_pivot = heat_pivot.reindex(columns=seg_order_all)
+        heat_pivot = heat_pivot.reindex(range(24))
+        heat_pivot.columns = [seg_label_map.get(s, s) for s in seg_order_all]
  
-            pivot = corr_analyzed.pivot_table(
-                index='segment_uid', columns='hour_of_day', values='is_congested', aggfunc='mean'
-            )
-            pivot = pivot.reindex(seg_order)
-            pivot.index = seg_labels
+        fig_seg_heat, ax_seg_heat = plt.subplots(figsize=(max(10, 1.8 * len(seg_order_all)), 8))
+        sns.heatmap(
+            heat_pivot, cmap='YlOrRd', vmin=0, vmax=1, ax=ax_seg_heat,
+            cbar_kws={'label': 'Congestion strength (fraction of hour congested)'},
+            linewidths=0.4, linecolor='white'
+        )
  
-            fig_cascade, ax_cascade = plt.subplots(figsize=(12, max(0.8 * len(seg_order), 1.2) + 1.2))
-            sns.heatmap(
-                pivot, cmap='YlOrRd', vmin=0, vmax=1, ax=ax_cascade,
-                cbar_kws={'label': 'Congestion frequency'}, linewidths=0.4, linecolor='white'
-            )
+        for tick_label, seg_uid in zip(ax_seg_heat.get_xticklabels(), seg_order_all):
+            status = seg_class_map.get(seg_uid, "No structural issue detected")
+            tick_label.set_color(STATUS_COLORS[status])
+            tick_label.set_fontweight('bold')
  
-            for tick_label, seg_uid in zip(ax_cascade.get_yticklabels(), seg_order):
-                status = seg_class.get(seg_uid, "No structural issue detected")
-                tick_label.set_color(STATUS_COLORS[status])
-                tick_label.set_fontweight('bold')
- 
-            n_segs = len(seg_order)
-            subtitle = "single-segment corridor" if n_segs == 1 else f"{n_segs} segments"
-            ax_cascade.set_title(f"{corr} ({subtitle})", fontsize=11, fontweight='bold', color='#1a1a2e', pad=10)
-            ax_cascade.set_xlabel("Hour of day", fontsize=9, fontweight='bold', color='#1a1a2e')
-            ax_cascade.set_ylabel("Segment (upstream → downstream)", fontsize=9, fontweight='bold', color='#1a1a2e')
-            plt.tight_layout()
-            st.pyplot(fig_cascade)
+        ax_seg_heat.set_title(
+            "Congestion Strength by Segment and Hour ("
+            + str(len(seg_order_all)) + " segments across "
+            + str(metrics['corridor_name'].nunique()) + " corridors)",
+            fontsize=12, fontweight='bold', color='#1a1a2e', pad=12
+        )
+        ax_seg_heat.set_xlabel("Segment", fontsize=10, fontweight='bold', color='#1a1a2e')
+        ax_seg_heat.set_ylabel("Hour of day", fontsize=10, fontweight='bold', color='#1a1a2e')
+        plt.xticks(rotation=30, ha='right', fontsize=8.5)
+        plt.yticks(fontsize=8.5)
+        plt.tight_layout()
+        st.pyplot(fig_seg_heat)
+        st.caption(
+            "Central-Puzhal and Puzhal-Central are shown as two independent columns here - they are opposite "
+            "one-way directions, not one corridor, and are never averaged together."
+        )
  
         # ==============================================================================
         # 8. TOP SEGMENT PROFILES (weekday vs weekend)
@@ -768,9 +816,7 @@ def main():
         st.caption("A profile staying above the red threshold line for an extended stretch, on both weekdays and weekends, points to a structural constraint rather than ordinary peak demand. The colored strip on the left of each panel matches the segment's status (red/yellow/green).")
  
         # ==============================================================================
-        # 9. EMPIRICAL CASE STUDY (multi-segment corridors — this is where an upstream
-        # comparison is actually possible, so it's the most informative chart for
-        # visually proving a spillover chain)
+        # 9. EMPIRICAL CASE STUDY (multi-segment corridors)
         # ==============================================================================
         multi_corridors = sorted(metrics.loc[metrics['multi_segment_corridor'], 'corridor_name'].unique().tolist())
         if len(multi_corridors) > 0:
@@ -814,10 +860,7 @@ def main():
                 )
  
         # ==============================================================================
-        # 9b. MACHINE LEARNING CROSS-CHECK: SCIKIT-LEARN LOGISTIC REGRESSION
-        # A data-driven second opinion on the rule-based classification above, trained
-        # network-wide (every segment, every corridor) so it still answers the same
-        # "rank all segments" business question and forecasts near-future risk.
+        # 9b. MACHINE LEARNING CROSS-CHECK: Logistic Regression with NumPy
         # ==============================================================================
         st.write("---")
         section_title("Machine Learning Cross-Check: Predicted Breakdown Risk")
@@ -961,7 +1004,9 @@ def main():
                 f'{row["classification"]} ({row["priority_tier"]} priority): {row["recommended_action"]}',
                 unsafe_allow_html=True
             )
-
+ 
+ 
+ 
     # =============================================================================
     # MODULE TAB 2: HYPOTHESIS 2 - TEMPORAL PEAK PROFILING
     # =============================================================================
