@@ -1373,11 +1373,11 @@ def main():
         section_title("Methodology")
         st.markdown(
             "Travel Time Index (TTI) data is grouped across explicit temporal blocks. Peak hours map to standard weekday rush windows "
-            "(08:00–10:00 IST and 17:00–20:00 IST)[cite: 4], while off-peak baselines track late-night conditions (23:00–05:00 IST)[cite: 4] to establish "
+            "(08:00–10:00 IST and 17:00–20:00 IST), while off-peak baselines track late-night conditions (23:00–05:00 IST) to establish "
             "a zero-volume speed baseline. The engine derives three micro-infrastructure indicators per segment: **Downstream Lane Drops** "
-            "($\Delta\\text{Lanes}_s = L_s - L_{s+1}$)[cite: 4, 6], **Signal Density Proxies** ($D_{\\text{sig},s} = 1000 / \\text{Dist}_{\\text{signal}}$)[cite: 6], "
-            "and **Intermodal Bus Friction** ($F_{\\text{bus},s} = 1 / [D_{\\text{bus}} \\times L_s]$)[cite: 4, 6]. Segments are categorized into "
-            "operational quadrants based on their off-peak versus peak capacity markers[cite: 4, 6]."
+            "($\Delta\\text{Lanes}_s = L_s - L_{s+1}$), **Signal Density Proxies** ($D_{\\text{sig},s} = 1000 / \\text{Dist}_{\\text{signal}}$), "
+            "and **Intermodal Bus Friction** ($F_{\\text{bus},s} = 1 / [D_{\\text{bus}} \\times L_s]$). Segments are categorized into "
+            "operational quadrants based on their off-peak versus peak capacity markers."
         )
         render_callout(
             "📐 <b>Why off-peak thresholds isolate assets:</b> Under standard conditions, late-night traffic should flow freely "
@@ -1514,7 +1514,7 @@ def main():
             ax_q.legend(fontsize=8, loc='upper left', facecolor='white')
             style_axes(ax_q)
             st.pyplot(fig_q)
-            st.caption("Behavioral quadrant mapping. Links in the top-right red zone indicate true design deficits[cite: 6].")
+            st.caption("Behavioral quadrant mapping. Links in the top-right red zone indicate true design deficits.")
 
         with col_g2:
             fig_l = plt.figure(figsize=(6, 4.5), facecolor='white')
@@ -1525,7 +1525,7 @@ def main():
             ax_l.grid(axis='y', linestyle=':', alpha=0.4)
             style_axes(ax_l)
             st.pyplot(fig_l)
-            st.caption("Capacity delta tracking. Significant upward variance indicates severe bottlenecks at merge points[cite: 6].")
+            st.caption("Capacity delta tracking. Significant upward variance indicates severe bottlenecks at merge points.")
 
         # ==============================================================================
         # 6. PARTIAL DEPENDENCE ANALYSIS
@@ -1549,7 +1549,7 @@ def main():
             ax_f.grid(True, linestyle=':', alpha=0.3)
             style_axes(ax_f)
             st.pyplot(fig_f)
-            st.caption("Marginal effect curve showing how nearby bus stops slow down traffic under zero-volume conditions[cite: 6].")
+            st.caption("Marginal effect curve showing how nearby bus stops slow down traffic under zero-volume conditions.")
 
         with col_g4:
             fig_sd = plt.figure(figsize=(6, 4.2), facecolor='white')
@@ -1566,7 +1566,7 @@ def main():
             ax_sd.grid(True, linestyle=':', alpha=0.3)
             style_axes(ax_sd)
             st.pyplot(fig_sd)
-            st.caption("Identifies the spatial threshold where tightly packed traffic signals begin backing up cars[cite: 6].")
+            st.caption("Identifies the spatial threshold where tightly packed traffic signals begin backing up cars.")
     # =============================================================================
     # MODULE TAB 4: HYPOTHESIS 4 - WEATHER-DRIVEN VARIANCE
     # =============================================================================
@@ -2228,7 +2228,7 @@ def main():
             ax_pdp.set_ylabel("Buffer Time Index (BTI %)", color='#0F172A', fontsize=9, fontweight='bold')
             style_axes(ax_pdp)
             st.pyplot(fig_pdp)
-            st.caption("Isolates the direct impact of traffic signal distance on commuter unreliability[cite: 6].")
+            st.caption("Isolates the direct impact of traffic signal distance on commuter unreliability.")
 
         with col_g4:
             lev_records = [{'Link Node Reference': name, 'Levene W-Stat': 0.85 if np.std(g['travel_time_index_tti'])<0.4 else 3.5, 'p-value': 0.62 if np.std(g['travel_time_index_tti'])<0.4 else 0.04, 'Variance Stability': 'Stable / Structural Trait' if np.std(g['travel_time_index_tti'])<0.4 else 'Transient Incident'} for name, g in df_peaks.groupby('shapefile_segment_name')]
@@ -2907,7 +2907,7 @@ def main():
             ax_pca.grid(True, linestyle=':', alpha=0.3)
             style_axes(ax_pca)
             st.pyplot(fig_pca)
-            st.caption("PCA dimension reduction exposes the natural clusters of segments across the network layout[cite: 2].")
+            st.caption("PCA dimension reduction exposes the natural clusters of segments across the network layout.")
 
         # Rows 2
         st.write("---")
