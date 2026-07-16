@@ -997,7 +997,7 @@ def main():
  
                 n_rc_total = int(case_df['root_cause_event'].sum())
                 st.caption(
-                    f"Red X markers show intervals where a link broke down while its upstream neighbor stayed clear "
+                    f"The red 'X' markers represent isolated, verified root-cause breakdown events for the specific downstream segment. While the solid red line displays the segment's overall everyday average—which includes normal, clear-flowing days that naturally pull the average down—the 'X' markers plot the extreme severity of the bottleneck only during the specific intervals it actually failed. These markers visually isolate the exact moments where the segment experienced severe gridlock independently while its immediate upstream neighbor remained clear, mathematically proving a localized structural failure rather than a cascading traffic jam."
                     f"({n_rc_total} verified instances over the observation window)."
                 )
  
