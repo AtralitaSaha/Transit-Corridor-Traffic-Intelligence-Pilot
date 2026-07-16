@@ -502,8 +502,6 @@ def main():
             border_color="#3498db"
         )
  
-        MIN_ROOT_CAUSE_EVENTS = 2
- 
         with st.expander("📐 Formula reference"):
             st.markdown("A segment is a confirmed root cause only if all four conditions hold:")
             m1, m2, m3, m4 = st.columns(4)
@@ -546,9 +544,8 @@ def main():
         # 2. DATA PREPARATION
         # ==============================================================================
         df_analyzed = df_fetched.copy()
-        df_analyzed['execution_timestamp'] = pd.to_datetime(
-            df_analyzed['execution_timestamp'], format='mixed', dayfirst=True, errors='coerce'
-        )
+        # execution_timestamp is already parsed once at ingestion (top of main()) —
+        # no need to re-parse it here, just guard against any stray NaT.
         df_analyzed = df_analyzed.dropna(subset=['execution_timestamp'])
  
         n_before = len(df_analyzed)
@@ -626,6 +623,11 @@ def main():
         else:
             avg_onset = pd.DataFrame(columns=['segment_uid', 'mean_onset_hour'])
  
+        obs_span_days = df_analyzed.groupby('segment_uid')['execution_timestamp'].agg(
+            lambda s: max((s.max() - s.min()).total_seconds() / 86400.0, 1.0)
+        )
+        min_events_by_segment = (obs_span_days / 21.0 * 2.0).clip(lower=2).round().astype(int)
+
         metrics = df_analyzed.groupby(
             ['segment_uid', 'corridor_name', 'shapefile_segment_name', 'multi_segment_corridor']
         ).agg(
@@ -641,6 +643,9 @@ def main():
         metrics = pd.merge(metrics, avg_onset, on='segment_uid', how='left')
         metrics['mean_onset_hour'] = metrics['mean_onset_hour'].fillna(24.0)
         metrics['pct_time_congested'] = (metrics['total_congested_intervals'] / metrics['total_intervals']) * 100
+        
+        metrics = metrics.merge(min_events_by_segment.rename('min_root_cause_events'), on='segment_uid', how='left')
+        metrics['min_root_cause_events'] = metrics['min_root_cause_events'].fillna(2).astype(int)
  
         def _minmax(series: pd.Series) -> pd.Series:
             if series.max() == series.min():
@@ -663,7 +668,7 @@ def main():
         # ----- Classification: answers the hypothesis question directly, per segment -----
         # Every segment lands in exactly one of three buckets.
         def _classify(row):
-            if row['root_cause_events'] >= MIN_ROOT_CAUSE_EVENTS:
+            if row['root_cause_events'] >= row['min_root_cause_events']:
                 return "Confirmed root cause"
             if row['spillover_events'] > 0:
                 return "Likely spillover / victim"
