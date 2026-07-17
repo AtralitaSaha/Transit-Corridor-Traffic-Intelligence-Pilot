@@ -1817,43 +1817,41 @@ def main():
             "capture the independent effect of reduced sightlines on safe following speed."
         )
         render_callout(
-            "📉 <b>Reading the sensitivity slope:</b> a slope near zero means the segment is largely rain-proof — "
+            "<b>Reading the sensitivity slope:</b> a slope near zero means the segment is largely rain-proof — "
             "geometry and drainage are adequate. A steep positive slope flags a segment where rainfall directly "
             "translates into lost capacity, which is the priority list for drainage and surface-grip improvements.",
             border_color="#3498db"
         )
         st.write("---")
         
+        _h4_synthetic = False
         if 'rainfall_intensity_mm_hr' not in df_fetched.columns:
             if 'precipitation_intensity_mm_h' in df_fetched.columns:
-                # The feed already carries real precipitation telemetry under a
-                # different column name than this module expects. Map it in
-                # directly rather than fabricating synthetic rain — the
-                # existing travel_time_index_tti values already reflect
-                # whatever real-world weather effect actually occurred, so no
-                # artificial TTI injection is applied on this path.
                 df_fetched['rainfall_intensity_mm_hr'] = df_fetched['precipitation_intensity_mm_h']
             else:
-                # No real precipitation signal exists anywhere in this feed —
-                # fabricate a plausible one purely so the module has something
-                # to analyze, and inject a matching synthetic TTI effect since
-                # the real TTI values have no weather signal to detect.
+                _h4_synthetic = True
                 np.random.seed(42)
                 df_fetched['rainfall_intensity_mm_hr'] = np.random.choice([0.0, 2.5, 8.0, 25.0], size=len(df_fetched), p=[0.75, 0.15, 0.07, 0.03])
                 df_fetched['travel_time_index_tti'] += np.where(df_fetched['shapefile_segment_name'] == 'PUZHAL_CENTRAL_ATGRADE_002',
-                                                        (df_fetched['rainfall_intensity_mm_hr'] * 0.052),
-                                                       np.where(df_fetched['shapefile_segment_name'] == 'OMR_THIRUVANMIYUR_005',
-                                                        (df_fetched['rainfall_intensity_mm_hr'] * 0.045),
-                                                        (df_fetched['rainfall_intensity_mm_hr'] * 0.022)))
- 
+                                                                (df_fetched['rainfall_intensity_mm_hr'] * 0.052),
+                                                               np.where(df_fetched['shapefile_segment_name'] == 'OMR_THIRUVANMIYUR_005',
+                                                                (df_fetched['rainfall_intensity_mm_hr'] * 0.045),
+                                                                (df_fetched['rainfall_intensity_mm_hr'] * 0.022)))
+
         if 'visibility_meters' not in df_fetched.columns:
-            # Only fabricate visibility if the feed truly has none. If real
-            # rainfall was mapped in above, this fallback still keeps the
-            # visibility-vs-TTI panel from crashing on a fully synthetic feed.
-            df_fetched['visibility_meters'] = np.where(df_fetched['rainfall_intensity_mm_hr'] == 0, 6000,
-                                               np.where(df_fetched['rainfall_intensity_mm_hr'] <= 4.0, 3000,
-                                               np.where(df_fetched['rainfall_intensity_mm_hr'] <= 16.0, 1200, 400)))
- 
+            _h4_synthetic = True
+            np.random.seed(43)
+            _vis_noise = np.random.normal(0, 400, size=len(df_fetched))
+            df_fetched['visibility_meters'] = np.clip(
+                np.where(df_fetched['rainfall_intensity_mm_hr'] == 0, 6000,
+                np.where(df_fetched['rainfall_intensity_mm_hr'] <= 4.0, 3000,
+                np.where(df_fetched['rainfall_intensity_mm_hr'] <= 16.0, 1200, 400))) + _vis_noise,
+                200, 8000
+            )
+
+        if _h4_synthetic:
+            st.warning("This feed has no real rainfall/visibility columns — this tab is running on synthetic, "
+                       "demo-only weather data. Treat every KPI, slope, and p-value below as illustrative, not a real-world finding.")
  
         conditions = [
             (df_fetched['rainfall_intensity_mm_hr'] == 0.0),
@@ -1867,7 +1865,7 @@ def main():
         _heavy_event_count = int((df_fetched['weather_state'] == '3_Heavy Monsoon Anomaly').sum())
         if _heavy_event_count < 20:
             st.warning(
-                f"⚠️ Only {_heavy_event_count} heavy-monsoon-condition readings exist in this dataset. "
+                f"Only {_heavy_event_count} heavy-monsoon-condition readings exist in this dataset. "
                 "Delay-inflation figures for segments with few or zero heavy-rain readings are based on a very "
                 "small sample and should be treated as directional, not conclusive."
             )
@@ -1955,14 +1953,6 @@ def main():
  
         # ==============================================================================
         # MACHINE LEARNING CROSS-CHECK: MULTIVARIATE OLS WITH SEGMENT FIXED EFFECTS
-        # The naive per-segment slope above regresses TTI on rainfall alone. But rain
-        # doesn't fall uniformly across the day, and different segments have different
-        # baseline TTI regardless of weather — so a univariate slope can partly be
-        # picking up time-of-day rush-hour effects and segment-specific baselines
-        # rather than the pure weather effect. This model (built from scratch with
-        # NumPy, closed-form OLS, no sklearn dependency) controls for hour-of-day and
-        # segment fixed effects simultaneously, isolating the network-wide, confound-
-        # adjusted marginal effect of rainfall and visibility on TTI.
         # ==============================================================================
         st.write("---")
         section_title("Machine Learning Cross-Check: Confound-Adjusted Weather Elasticity")
@@ -2017,11 +2007,6 @@ def main():
             tstat_full = np.divide(beta_full, se_full, out=np.zeros_like(beta_full), where=se_full != 0)
  
             def _norm_cdf(z):
-                # Self-contained, fully-vectorized standard normal CDF via the
-                # Abramowitz & Stegun (7.1.26) erf approximation, using only
-                # NumPy — no dependency on Python's `math` module, so this
-                # can't break due to a missing `import math` in any deployed
-                # copy of this file, and it's faster than np.vectorize(math.erf).
                 z = np.asarray(z, dtype=float)
                 x = np.abs(z) / np.sqrt(2.0)
                 a1, a2, a3, a4, a5 = 0.254829592, -0.284496736, 1.421413741, -1.453152027, 1.061405429
@@ -2058,7 +2043,7 @@ def main():
  
             confound_pct = (naive_rain_slope - adjusted_rain_slope) / naive_rain_slope * 100 if naive_rain_slope != 0 else 0.0
             render_callout(
-                f"📐 <b>Confounding check:</b> the naive per-segment slope averages {naive_rain_slope:.4f}, while the "
+                f"<b>Confounding check:</b> the naive per-segment slope averages {naive_rain_slope:.4f}, while the "
                 f"confound-adjusted network slope (controlling for hour-of-day and segment baseline) is "
                 f"{adjusted_rain_slope:.4f} — a difference of about {abs(confound_pct):.0f}%. This is how much of the "
                 "naive slope was really rush-hour timing bleeding into the rain estimate, versus rain's true "
