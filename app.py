@@ -1200,6 +1200,12 @@ def main():
         
         if 'is_weekend' not in df_fetched.columns:
             df_fetched['is_weekend'] = 0
+
+        # ---- helper: convert "HH:MM" strings to minutes-since-midnight, so we can
+        # compute real elapsed time between bins instead of assuming uniform spacing ----
+        def _time_str_to_minutes(t_str):
+            h, m = map(int, t_str.split(':'))
+            return h * 60 + m
  
         unique_corridors = df_fetched['corridor_name'].unique()
         peak_summary_records = []
@@ -1216,21 +1222,36 @@ def main():
                 
                 peak_time_str = time_profile.idxmax()
                 max_tti_val = time_profile.max()
+                peak_minutes = _time_str_to_minutes(peak_time_str)
                 
-                post_peak_times = [t for t in time_profile.index if t >= peak_time_str]
-                recovery_intervals = 0
+                # Walk forward through the ACTUAL bins that exist in the data (whatever
+                # their real spacing is) and find the real clock time at which the
+                # failure rate first drops back to/below 25% — this is the true
+                # recovery point, not a count of rows.
+                post_peak_times = sorted([t for t in time_profile.index if t >= peak_time_str])
+                recovered_at_str = None
                 for t_str in post_peak_times:
-                    if failed_profile.get(t_str, 0) > 0.25:  
-                        recovery_intervals += 1
-                    else:
-                        if recovery_intervals > 0: break
-                            
-                clearance_minutes = max(detected_interval_minutes, recovery_intervals * detected_interval_minutes)
+                    if failed_profile.get(t_str, 0) <= 0.25:
+                        recovered_at_str = t_str
+                        break
+
+                if recovered_at_str is not None:
+                    recovered_minutes = _time_str_to_minutes(recovered_at_str)
+                    clearance_minutes = max(recovered_minutes - peak_minutes, 0)
+                    clearance_label = f"{clearance_minutes:.0f} mins"
+                else:
+                    # Never dropped below 25% for the rest of the observed window —
+                    # don't fabricate a duration; say so explicitly instead of quietly
+                    # under-reporting it as "15 mins" or whatever the last count was.
+                    last_bin_minutes = _time_str_to_minutes(post_peak_times[-1]) if post_peak_times else peak_minutes
+                    clearance_minutes = max(last_bin_minutes - peak_minutes, 0)
+                    clearance_label = f"{clearance_minutes:.0f}+ mins (did not clear in observed window)"
+                
                 base_failure_rate = sub_df['is_failed'].mean()
                 
                 peak_summary_records.append({
                     'corridor': corr, 'day_profile': day_type, 'failure_minute': peak_time_str,
-                    'peak_tti': max_tti_val, 'clearance_duration': f"{clearance_minutes:.0f} mins", 'failure_rate': base_failure_rate
+                    'peak_tti': max_tti_val, 'clearance_duration': clearance_label, 'failure_rate': base_failure_rate
                 })
                 
         peak_report_df = pd.DataFrame(peak_summary_records)
@@ -1349,13 +1370,6 @@ def main():
  
         # ==============================================================================
         # MACHINE LEARNING CROSS-CHECK: SMOOTHED FAILURE-PROBABILITY MODEL
-        # A logistic regression (built from scratch with NumPy, no sklearn dependency)
-        # gives a noise-reduced, statistically-fitted second opinion on the empirical
-        # "peak hour" identification above. The empirical peak is just the single
-        # highest-TTI hour bin in the raw data — it can be pulled around by a handful
-        # of noisy readings. The model instead learns a smooth diurnal curve per
-        # corridor (via hour-of-day x corridor interaction terms) and reports where
-        # *that* curve peaks, which is far less sensitive to any single noisy hour.
         # ==============================================================================
         st.write("---")
         section_title("Machine Learning Cross-Check: Smoothed Failure-Probability Model")
