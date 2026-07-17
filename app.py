@@ -1149,7 +1149,7 @@ def main():
  
  
  
-    # =============================================================================
+   # =============================================================================
     # MODULE TAB 2: HYPOTHESIS 2 - TEMPORAL PEAK PROFILING
     # =============================================================================
     elif selected_tab == "Hypothesis 2: Temporal Peak Profiling":
@@ -1179,7 +1179,7 @@ def main():
             "just its peak — is visible at a glance."
         )
         render_callout(
-            "🕒 <b>Why clearance time matters:</b> two corridors can have the same peak severity but very different "
+            "<b>Why clearance time matters:</b> two corridors can have the same peak severity but very different "
             "recovery speeds. A corridor that clears in 15 minutes needs signal retiming; one that stays saturated "
             "for two hours points to a structural capacity shortfall.",
             border_color="#3498db"
@@ -1188,8 +1188,12 @@ def main():
  
         if 'execution_timestamp' in df_fetched.columns:
             df_fetched['time_of_day'] = df_fetched['execution_timestamp'].dt.strftime('%H:%M')
+            _gaps = df_fetched.sort_values('execution_timestamp')['execution_timestamp'].diff().dt.total_seconds().div(60.0)
+            _gaps = _gaps[_gaps > 0]
+            detected_interval_minutes = float(_gaps.median()) if len(_gaps) else 15.0
         else:
             df_fetched['time_of_day'] = df_fetched['derived_hour'].astype(str).str.zfill(2) + ":00"
+            detected_interval_minutes = 60.0
  
         df_fetched['failure_threshold'] = df_fetched.groupby('corridor_name')['travel_time_index_tti'].transform(lambda x: x.quantile(0.90))
         df_fetched['is_failed'] = df_fetched['travel_time_index_tti'] > df_fetched['failure_threshold']
@@ -1221,12 +1225,12 @@ def main():
                     else:
                         if recovery_intervals > 0: break
                             
-                clearance_minutes = max(15, recovery_intervals * 15)
+                clearance_minutes = max(detected_interval_minutes, recovery_intervals * detected_interval_minutes)
                 base_failure_rate = sub_df['is_failed'].mean()
                 
                 peak_summary_records.append({
                     'corridor': corr, 'day_profile': day_type, 'failure_minute': peak_time_str,
-                    'peak_tti': max_tti_val, 'clearance_duration': f"{clearance_minutes} mins", 'failure_rate': base_failure_rate
+                    'peak_tti': max_tti_val, 'clearance_duration': f"{clearance_minutes:.0f} mins", 'failure_rate': base_failure_rate
                 })
                 
         peak_report_df = pd.DataFrame(peak_summary_records)
@@ -1253,17 +1257,20 @@ def main():
  
         section_title("Infrastructure Failure Rate Matrix: Weekday Commutes vs. Weekend Leisure Volumes")
         fig_bar, ax_bar = plt.subplots(figsize=(10, 4.5))
-        wd_bar_data = peak_report_df[peak_report_df['day_profile'] == 'Weekday']
-        we_bar_data = peak_report_df[peak_report_df['day_profile'] == 'Weekend']
         
-        x_indices = np.arange(len(wd_bar_data))
+        wd_bar_data = peak_report_df[peak_report_df['day_profile'] == 'Weekday'][['corridor', 'failure_rate']].rename(columns={'failure_rate': 'weekday_rate'})
+        we_bar_data = peak_report_df[peak_report_df['day_profile'] == 'Weekend'][['corridor', 'failure_rate']].rename(columns={'failure_rate': 'weekend_rate'})
+        bar_merged = wd_bar_data.merge(we_bar_data, on='corridor', how='outer').fillna(0.0)
+
+        x_indices = np.arange(len(bar_merged))
         b_width = 0.35
-        
-        ax_bar.bar(x_indices - b_width/2, wd_bar_data['failure_rate'] * 100, b_width, label='Weekday Failure %', color='#3498db', edgecolor='white', alpha=0.95)
-        ax_bar.bar(x_indices + b_width/2, we_bar_data['failure_rate'] * 100, b_width, label='Weekend Failure %', color='#f1c40f', edgecolor='white', alpha=0.95)
-        
+
+        ax_bar.bar(x_indices - b_width/2, bar_merged['weekday_rate'] * 100, b_width, label='Weekday Failure %', color='#3498db', edgecolor='white', alpha=0.95)
+        ax_bar.bar(x_indices + b_width/2, bar_merged['weekend_rate'] * 100, b_width, label='Weekend Failure %', color='#f1c40f', edgecolor='white', alpha=0.95)
+
         ax_bar.set_xticks(x_indices)
-        ax_bar.set_xticklabels(wd_bar_data['corridor'], rotation=10, ha='center', fontsize=9, color='#4a5568')
+        ax_bar.set_xticklabels(bar_merged['corridor'], rotation=10, ha='center', fontsize=9, color='#4a5568')
+        
         ax_bar.set_ylabel("Operating Windows in Breakdown State (%)", fontweight='bold', color='#1a1a2e')
         ax_bar.grid(axis='y', linestyle=':', alpha=0.4)
         ax_bar.legend(loc='upper right', fontsize=8.5, frameon=True, facecolor='white')
