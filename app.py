@@ -2765,7 +2765,7 @@ def main():
             "route is monitored only at corridor-average resolution."
         )
         render_callout(
-            "🔍 <b>Reading the dilution model:</b> the KPIs and chart below are computed directly from this "
+            "<b>Reading the dilution model:</b> the KPIs and chart below are computed directly from this "
             "dataset's real <code>true_driving_distance_meters</code> and <code>travel_time_index_tti</code> "
             "columns — no numbers here are pre-set or simulated. <b>Real-life intervention (if the gap turns out "
             "large):</b> move the monitoring dashboard from link-averages to shorter spatial-slice bins so queue "
@@ -2781,6 +2781,9 @@ def main():
                 'TAMBARAM_GUINDY_025': 4800.0
             }
             df_fetched['true_driving_distance_meters'] = df_fetched['shapefile_segment_name'].map(distance_map).fillna(1200.0)
+            st.warning("No `true_driving_distance_meters` column found — segment distances are a synthetic, demo-only "
+                       "placeholder and the length-dilution effect has been artificially injected. Treat this tab's numbers "
+                       "as illustrative until real distance data is supplied.")
             
             if 'hour_of_day' not in df_fetched.columns:
                 df_fetched['hour_of_day'] = df_fetched['derived_hour']
@@ -2829,7 +2832,7 @@ def main():
         st.write("")
         if spatial_metrics['shapefile_segment_name'].nunique() <= 6:
             st.warning(
-                f"⚠️ Only {spatial_metrics['shapefile_segment_name'].nunique()} unique segments exist in this "
+                f"Only {spatial_metrics['shapefile_segment_name'].nunique()} unique segments exist in this "
                 "dataset, each with one fixed distance value. The scatter/log-fit below is a between-segment "
                 "comparison across a handful of points — treat the visual trend as directional, and rely on the "
                 "interval-level regression further down for a properly powered significance test."
@@ -2858,10 +2861,16 @@ def main():
                     textcoords="offset points", xytext=(0, 10), ha='center', fontsize=8, fontweight='bold', color='#1a1a2e'
                 )
                 
-        fit_coeffs = np.polyfit(np.log(spatial_metrics['true_driving_distance_meters']), spatial_metrics['max_peak_tti'], 1)
-        x_space = np.linspace(spatial_metrics['true_driving_distance_meters'].min(), spatial_metrics['true_driving_distance_meters'].max(), 300)
-        y_space = fit_coeffs[0] * np.log(x_space) + fit_coeffs[1]
-        ax_s1.plot(x_space, y_space, color='#1a1a2e', linestyle='--', linewidth=2, label='Length Dilution Decay Model')
+        _n_unique_segs_h8 = spatial_metrics['shapefile_segment_name'].nunique()
+        if _n_unique_segs_h8 >= 8:
+            fit_coeffs = np.polyfit(np.log(spatial_metrics['true_driving_distance_meters']), spatial_metrics['max_peak_tti'], 1)
+            x_space = np.linspace(spatial_metrics['true_driving_distance_meters'].min(), spatial_metrics['true_driving_distance_meters'].max(), 300)
+            y_space = fit_coeffs[0] * np.log(x_space) + fit_coeffs[1]
+            ax_s1.plot(x_space, y_space, color='#1a1a2e', linestyle='--', linewidth=2, label='Length Dilution Decay Model')
+        else:
+            ax_s1.text(0.02, 0.02, f"Trend line hidden: only {_n_unique_segs_h8} segments (<8 minimum)",
+                       transform=ax_s1.transAxes, fontsize=8, color='#991B1B', style='italic')
+
         ax_s1.set_title("Localized Congestion Dilution Matrix", fontsize=10, fontweight='bold', color='#1a1a2e')
         ax_s1.set_xlabel("True Driving Distance of Segment (Meters)", fontsize=8, color='#1a1a2e')
         ax_s1.set_ylabel("Maximum Observed Peak-Hour TTI Spike", fontsize=8, color='#1a1a2e')
@@ -2885,12 +2894,6 @@ def main():
  
         # ==============================================================================
         # MACHINE LEARNING CROSS-CHECK: INTERVAL-LEVEL OLS ON LOG-DISTANCE
-        # The chart above only has one point per segment (n=5) — nowhere near enough
-        # to test statistical significance. This regression instead uses every
-        # individual peak-hour reading (thousands of rows) with log(distance) as a
-        # continuous predictor, controlling for hour-of-day and weekend/weekday, to
-        # properly test whether shorter segments really do show higher peak TTI once
-        # ordinary demand timing is accounted for. Built from scratch with NumPy.
         # ==============================================================================
         st.write("---")
         section_title("Machine Learning Cross-Check: Interval-Level Significance Test")
