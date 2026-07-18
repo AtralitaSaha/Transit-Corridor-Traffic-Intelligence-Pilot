@@ -2506,6 +2506,9 @@ def main():
                 df_fetched['shapefile_segment_name_lower'].str.contains('flyover|elevated'),
                 'Express (Flyover)', 'At-Grade (Ground)'
             )
+            st.warning("No `network_layer_type` column found — layer type is being guessed from a text match on the "
+                       "segment name ('flyover'/'elevated'). Treat layer-type findings on this tab as a heuristic placeholder, not verified geometry.")
+                       
         if 'segment_slope_grade' not in df_fetched.columns:
             df_fetched['segment_slope_grade'] = 0.0
  
@@ -2614,11 +2617,6 @@ def main():
  
         # ==============================================================================
         # MACHINE LEARNING CROSS-CHECK: OLS TEST OF THE GEOMETRIC-PENALTY HYPOTHESIS
-        # Built from scratch with NumPy (closed-form least squares, no sklearn/scipy
-        # dependency). Tests whether slope grade and flyover/at-grade layer type have
-        # a statistically significant standalone effect on TTI, once hour-of-day and
-        # weekend/weekday are controlled for — the honest version of the comparison
-        # the charts above only show visually.
         # ==============================================================================
         st.write("---")
         section_title("Machine Learning Cross-Check: Statistical Test of the Geometry Hypothesis")
@@ -2717,6 +2715,9 @@ def main():
                 )
         else:
             st.info("Not enough observations relative to model parameters to fit a reliable model on this dataset.")
+
+        st.caption("Note: this p-value is not corrected for the other significance tests run elsewhere in this dashboard "
+                   "(e.g. the weather and length-dilution tabs) — treat an isolated p<0.05 result as suggestive, not conclusive.")
  
         st.write("---")
         section_title("Executive Summary and Next Steps for Engineering Teams")
