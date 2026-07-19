@@ -1911,7 +1911,7 @@ def main():
  
         top_seg = segment_report_df.iloc[0]
         kpi_defs = [
-            ("Most rain-sensitive segment", top_seg['segment_name'].split('_')[0], "#e74c3c", top_seg['corridor']),
+            ("Most rain-sensitive segment", top_seg['shapefile_segment_name']),
             ("Peak delay inflation", f"{top_seg['delay_inflation']*100:.1f}%", "#f1c40f", "Heavy monsoon vs dry baseline"),
             ("Segments monitored", f"{len(segment_report_df)}", "#3498db", "Across all corridors"),
             ("Avg dry-baseline TTI", f"{segment_report_df['dry_base_tti'].mean():.2f}", "#2ecc71", "Network reference point"),
