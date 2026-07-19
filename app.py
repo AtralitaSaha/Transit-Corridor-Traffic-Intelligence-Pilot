@@ -3034,11 +3034,14 @@ def main():
         # 2. DATA COMPILING & COMPONENT TRANSFORMATION
         # ==============================================================================
         df_tax_raw = df_fetched.copy()
+        
+        # Dynamic Spatial Fallbacks
         if 'lat' not in df_tax_raw.columns or 'lon' not in df_tax_raw.columns:
             np.random.seed(42)
             df_tax_raw['lat'] = np.random.uniform(13.00, 13.15, size=len(df_tax_raw))
             df_tax_raw['lon'] = np.random.uniform(80.20, 80.28, size=len(df_tax_raw))
-
+        
+        # Aggregation targets all unique segments found in the data stream (295 segments)
         df_tax_base = df_tax_raw.groupby('shapefile_segment_name').agg(
             mu_peak=('travel_time_index_tti', lambda x: x[df_tax_raw['derived_hour'].isin([8,9,10,17,18,19,20])].mean()),
             mu_offpeak=('travel_time_index_tti', lambda x: x[df_tax_raw['derived_hour'].isin([23,0,1,2,3,4,5])].mean()),
@@ -3048,6 +3051,18 @@ def main():
             lat=('lat', 'mean'),
             lon=('lon', 'mean')
         ).reset_index().fillna(1.0)
+        
+        # Track the total number of processed segments for the UI description text
+        total_active_segments = len(df_tax_base)
+        
+        # Update the business question layout to display the segment count dynamically
+        section_title("Business Question")
+        st.markdown(
+            f"**How can we classify all {total_active_segments} directional segments into distinct behavioral groups so CUMTA can manage the "
+            "metropolitan network using standardized policy templates rather than individual ad-hoc recommendations?**\n\n"
+            f"Treating every road stretch uniquely delays policy deployment. This module groups the complete monitored "
+            f"infrastructure network ({total_active_segments} segments) into four distinct behavioral categories using a multi-model clustering topology..."
+        )
 
         df_tax_base['bti_val'] = ((df_tax_base['p95_tti'] - df_tax_base['mean_tti']) / df_tax_base['mean_tti'].replace(0,1)) * 100
         df_tax_base['beta_rain'] = (df_tax_base['p95_tti'] - df_tax_base['mean_tti']) * 0.012
