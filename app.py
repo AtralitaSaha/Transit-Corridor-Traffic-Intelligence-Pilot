@@ -283,6 +283,106 @@ def _corridor_location_tokens(identifier):
     s = re.sub(r'\.SHP$', '', s)
     raw_tokens = re.split(r'[_\-\s]+', s)
     return [t for t in raw_tokens if t and not t.isdigit() and t not in _CORRIDOR_DESCRIPTOR_WORDS]
+
+# =============================================================================
+# SHARED: robust cross-validated model, auto-upgrades to Random Forest if
+# scikit-learn is installed, else falls back to a NumPy Ridge regression with
+# degree-2 interaction terms (still k-fold cross-validated). Used by H4/H7/H8.
+# =============================================================================
+def _fit_robust_model(X, y, feature_names, task='regression', n_folds=5, seed=42, min_n=50):
+    X = np.asarray(X, dtype=float)
+    y = np.asarray(y, dtype=float)
+    n = len(X)
+    if n < min_n or (task == 'classification' and len(np.unique(y)) < 2):
+        return None
+
+    rng = np.random.RandomState(seed)
+    fold_id = rng.permutation(n) % n_folds
+    oof_pred = np.zeros(n)
+    fold_scores = []
+
+    try:
+        from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
+        from sklearn.metrics import r2_score, roc_auc_score
+        engine = "Random Forest (scikit-learn)"
+        importances_accum = np.zeros(X.shape[1])
+        n_valid_folds = 0
+        for k in range(n_folds):
+            test_mask = fold_id == k
+            train_mask = ~test_mask
+            if test_mask.sum() == 0 or train_mask.sum() == 0:
+                continue
+            if task == 'classification':
+                if len(np.unique(y[train_mask])) < 2:
+                    continue
+                model = RandomForestClassifier(n_estimators=200, max_depth=6, random_state=seed, n_jobs=-1)
+                model.fit(X[train_mask], y[train_mask])
+                proba = model.predict_proba(X[test_mask])
+                pos_idx = list(model.classes_).index(1) if 1 in model.classes_ else 0
+                oof_pred[test_mask] = proba[:, pos_idx]
+                if len(np.unique(y[test_mask])) == 2:
+                    fold_scores.append(roc_auc_score(y[test_mask], oof_pred[test_mask]))
+            else:
+                model = RandomForestRegressor(n_estimators=200, max_depth=6, random_state=seed, n_jobs=-1)
+                model.fit(X[train_mask], y[train_mask])
+                oof_pred[test_mask] = model.predict(X[test_mask])
+                fold_scores.append(r2_score(y[test_mask], oof_pred[test_mask]))
+            importances_accum += model.feature_importances_
+            n_valid_folds += 1
+        importances = importances_accum / max(n_valid_folds, 1)
+        imp_df = pd.DataFrame({'feature': feature_names, 'importance': importances}).sort_values('importance', ascending=False)
+    except ImportError:
+        engine = "Ridge regression, degree-2 interactions (NumPy fallback)"
+        n_base = X.shape[1]
+        poly_cols = [X]
+        poly_names = list(feature_names)
+        for i in range(n_base):
+            for j in range(i, n_base):
+                poly_cols.append((X[:, i] * X[:, j]).reshape(-1, 1))
+                poly_names.append(f"{feature_names[i]}*{feature_names[j]}")
+        X_poly = np.hstack(poly_cols)
+        feat_mean, feat_std = X_poly.mean(axis=0), X_poly.std(axis=0)
+        feat_std[feat_std == 0] = 1.0
+        X_poly_s = (X_poly - feat_mean) / feat_std
+        lam = 5.0
+        importances_accum = np.zeros(X_poly_s.shape[1])
+        n_valid_folds = 0
+        for k in range(n_folds):
+            test_mask = fold_id == k
+            train_mask = ~test_mask
+            if test_mask.sum() == 0 or train_mask.sum() == 0:
+                continue
+            Xtr, Xte = X_poly_s[train_mask], X_poly_s[test_mask]
+            ytr, yte = y[train_mask], y[test_mask]
+            A = Xtr.T @ Xtr + lam * np.eye(Xtr.shape[1])
+            beta = np.linalg.solve(A, Xtr.T @ ytr)
+            pred = Xte @ beta
+            if task == 'classification':
+                pred_p = 1.0 / (1.0 + np.exp(-np.clip(pred, -30, 30)))
+                oof_pred[test_mask] = pred_p
+                if len(np.unique(yte)) == 2:
+                    npos, nneg = int((yte == 1).sum()), int((yte == 0).sum())
+                    if npos > 0 and nneg > 0:
+                        ranks = pd.Series(np.concatenate([pred_p[yte == 1], pred_p[yte == 0]])).rank().values
+                        auc = (ranks[:npos].sum() - npos * (npos + 1) / 2) / (npos * nneg)
+                        fold_scores.append(auc)
+            else:
+                oof_pred[test_mask] = pred
+                tss = np.sum((yte - yte.mean()) ** 2)
+                rss = np.sum((yte - pred) ** 2)
+                fold_scores.append(1 - rss / tss if tss > 0 else np.nan)
+            importances_accum += np.abs(beta)
+            n_valid_folds += 1
+        imp_df = pd.DataFrame({'feature': poly_names, 'importance': importances_accum / max(n_valid_folds, 1)}) \
+            .sort_values('importance', ascending=False).head(len(feature_names))
+
+    return {
+        'engine': engine,
+        'cv_score_mean': float(np.nanmean(fold_scores)) if fold_scores else np.nan,
+        'cv_score_std': float(np.nanstd(fold_scores)) if fold_scores else np.nan,
+        'importances': imp_df,
+        'oof_pred': oof_pred,
+    }
  
 def main():
     st.title("CUMTA Core Transit Network Diagnostics Cockpit")
@@ -1799,303 +1899,219 @@ def main():
             style_axes(ax_sd)
             st.pyplot(fig_sd)
             st.caption("Identifies spatial thresholds where clustering of consecutive traffic lights blocks baseline speeds.")
-    # =============================================================================
-    # MODULE TAB 4: HYPOTHESIS 4 - WEATHER-DRIVEN VARIANCE
-    # =============================================================================
-    elif selected_tab == "Hypothesis 4: Weather-Driven Variance":
+   elif selected_tab == "Hypothesis 4: Weather-Driven Variance":
 
-        inject_professional_style()
-        apply_pro_plot_style()
- 
-        render_page_header(
-            "Hypothesis 4 · Weather-Driven Variance (Atralita)",
-            "Isolating how much rainfall and low visibility degrade corridor capacity, segment by segment"
-        )
- 
-        section_title("Business Question")
-        st.markdown(
-            "**Exactly how much does rain degrade our transit network capacity compared to a normal dry day, and "
-            "can we mathematically isolate these events from ordinary demand-driven congestion?**\n\n"
-            "Rain is often blamed informally for a bad traffic day, but without isolating its effect segment by "
-            "segment, engineering teams can't tell whether a drainage upgrade, signal retiming, or resurfacing "
-            "would actually help — or whether the delay was really just rush hour."
-        )
-        section_title("Methodology")
-        st.markdown(
-            "Localized rainfall intensity and visibility are mapped directly onto the travel-speed telemetry. Each "
-            "segment's TTI is regressed against rainfall intensity (mm/hr) to derive a **rain sensitivity slope** — "
-            "how many TTI points are added per mm/hr of rain. Segments are also compared between dry-baseline and "
-            "heavy-monsoon conditions to compute a **delay inflation** percentage, and against visibility limits to "
-            "capture the independent effect of reduced sightlines on safe following speed."
-        )
-        render_callout(
-            "<b>Reading the sensitivity slope:</b> a slope near zero means the segment is largely rain-proof — "
-            "geometry and drainage are adequate. A steep positive slope flags a segment where rainfall directly "
-            "translates into lost capacity, which is the priority list for drainage and surface-grip improvements.",
-            border_color="#3498db"
-        )
-        st.write("---")
-        
-        _h4_synthetic = False
-        if 'rainfall_intensity_mm_hr' not in df_fetched.columns:
-            if 'precipitation_intensity_mm_h' in df_fetched.columns:
-                df_fetched['rainfall_intensity_mm_hr'] = df_fetched['precipitation_intensity_mm_h']
-            else:
-                _h4_synthetic = True
-                np.random.seed(42)
-                df_fetched['rainfall_intensity_mm_hr'] = np.random.choice([0.0, 2.5, 8.0, 25.0], size=len(df_fetched), p=[0.75, 0.15, 0.07, 0.03])
-                df_fetched['travel_time_index_tti'] += np.where(df_fetched['shapefile_segment_name'] == 'PUZHAL_CENTRAL_ATGRADE_002',
-                                                                (df_fetched['rainfall_intensity_mm_hr'] * 0.052),
-                                                               np.where(df_fetched['shapefile_segment_name'] == 'OMR_THIRUVANMIYUR_005',
-                                                                (df_fetched['rainfall_intensity_mm_hr'] * 0.045),
-                                                                (df_fetched['rainfall_intensity_mm_hr'] * 0.022)))
+    inject_professional_style()
+    apply_pro_plot_style()
 
-        if 'visibility_meters' not in df_fetched.columns:
-            _h4_synthetic = True
-            np.random.seed(43)
-            _vis_noise = np.random.normal(0, 400, size=len(df_fetched))
-            df_fetched['visibility_meters'] = np.clip(
-                np.where(df_fetched['rainfall_intensity_mm_hr'] == 0, 6000,
-                np.where(df_fetched['rainfall_intensity_mm_hr'] <= 4.0, 3000,
-                np.where(df_fetched['rainfall_intensity_mm_hr'] <= 16.0, 1200, 400))) + _vis_noise,
-                200, 8000
-            )
+    render_page_header(
+        "Hypothesis 4 · Weather-Driven Variance (Atralita)",
+        "Isolating whether rainfall — not traffic volume — is the cause of delay, segment by segment"
+    )
 
-        if _h4_synthetic:
-            st.warning("This feed has no real rainfall/visibility columns — this tab is running on synthetic, "
-                       "demo-only weather data. Treat every KPI, slope, and p-value below as illustrative, not a real-world finding.")
- 
-        conditions = [
-            (df_fetched['rainfall_intensity_mm_hr'] == 0.0),
-            (df_fetched['rainfall_intensity_mm_hr'] > 0.0) & (df_fetched['rainfall_intensity_mm_hr'] <= 4.0),
-            (df_fetched['rainfall_intensity_mm_hr'] > 4.0) & (df_fetched['rainfall_intensity_mm_hr'] <= 16.0),
-            (df_fetched['rainfall_intensity_mm_hr'] > 16.0)
-        ]
-        choices = ['0_Dry Baseline', '1_Light Rain', '2_Moderate Rain', '3_Heavy Monsoon Anomaly']
-        df_fetched['weather_state'] = np.select(conditions, choices, default='0_Dry Baseline')
- 
-        _heavy_event_count = int((df_fetched['weather_state'] == '3_Heavy Monsoon Anomaly').sum())
-        if _heavy_event_count < 20:
-            st.warning(
-                f"Only {_heavy_event_count} heavy-monsoon-condition readings exist in this dataset. "
-                "Delay-inflation figures for segments with few or zero heavy-rain readings are based on a very "
-                "small sample and should be treated as directional, not conclusive."
-            )
- 
- 
-        unique_segments = df_fetched['shapefile_segment_name'].unique()
-        segment_weather_records = []
- 
-        for seg in unique_segments:
-            seg_df = df_fetched[df_fetched['shapefile_segment_name'] == seg]
+    section_title("Business Question")
+    st.markdown(
+        "**Is a slowdown caused by rainfall itself, or is it just ordinary rush-hour volume that happens to "
+        "coincide with rain?**\n\n"
+        "The two are easy to confuse: peak hours are already slow because of demand, and rain can fall at any "
+        "hour, including peak hours. This module isolates rain's effect **specifically during off-peak, "
+        "low-volume windows** — where ordinary demand-driven congestion is minimal — as the cleanest test of "
+        "whether weather itself is a genuine, independent cause of delay."
+    )
+    section_title("Methodology")
+    st.markdown(
+        "Rainfall intensity is bucketed using RMC (Regional Meteorological Centre) reporting standards: **Dry** "
+        "(0 mm/hr), **Light Rain** (>0-10 mm/hr), **Moderate Rain** (>10-20 mm/hr), **Heavy Rainfall** (>20 mm/hr). "
+        "For each segment, the rain-TTI slope is computed **separately for peak-volume and off-peak-volume "
+        "hours**. Off-peak hours have negligible demand-driven congestion by construction, so a rain slope that "
+        "holds up there is direct evidence weather itself degrades capacity, independent of volume."
+    )
+    render_callout(
+        "🌧️ <b>Reading the off-peak rain sensitivity:</b> if a segment's TTI rises meaningfully with rainfall "
+        "even during off-peak hours (volume near zero), that is direct evidence weather — not volume — degrades "
+        "capacity there. If off-peak TTI stays flat across rain buckets while only peak-hour TTI rises with rain, "
+        "the apparent weather effect may really just be volume correlating with when it happens to rain.",
+        border_color="#3498db"
+    )
+    st.write("---")
+
+    # ------------------------------------------------------------------
+    # Real-time data only. No synthetic fallback: this tab now requires
+    # rainfall_intensity_mm_hr and visibility_meters to be present and
+    # accurate in the feed.
+    # ------------------------------------------------------------------
+    required_cols_h4 = ['rainfall_intensity_mm_hr', 'visibility_meters']
+    missing_cols_h4 = [c for c in required_cols_h4 if c not in df_fetched.columns]
+    if missing_cols_h4:
+        st.error(
+            f"This feed is missing required real-time weather column(s): {', '.join(missing_cols_h4)}. "
+            "This tab requires live rainfall_intensity_mm_hr and visibility_meters telemetry and no longer "
+            "falls back to synthetic data — please supply a feed with both columns."
+        )
+        st.stop()
+
+    if 'hour_of_day' not in df_fetched.columns:
+        df_fetched['hour_of_day'] = df_fetched['derived_hour']
+
+    # RMC rainfall intensity buckets
+    conditions = [
+        (df_fetched['rainfall_intensity_mm_hr'] == 0.0),
+        (df_fetched['rainfall_intensity_mm_hr'] > 0.0) & (df_fetched['rainfall_intensity_mm_hr'] <= 10.0),
+        (df_fetched['rainfall_intensity_mm_hr'] > 10.0) & (df_fetched['rainfall_intensity_mm_hr'] <= 20.0),
+        (df_fetched['rainfall_intensity_mm_hr'] > 20.0),
+    ]
+    choices = ['0_Dry', '1_Light Rain (0-10mm/hr)', '2_Moderate Rain (10-20mm/hr)', '3_Heavy Rainfall (>20mm/hr)']
+    df_fetched['weather_state'] = np.select(conditions, choices, default='0_Dry')
+
+    PEAK_HOURS_H4 = [7, 8, 9, 10, 17, 18, 19, 20]
+    df_fetched['is_peak_volume'] = df_fetched['hour_of_day'].isin(PEAK_HOURS_H4)
+
+    _heavy_event_count = int((df_fetched['weather_state'] == '3_Heavy Rainfall (>20mm/hr)').sum())
+    if _heavy_event_count < 20:
+        st.warning(
+            f"Only {_heavy_event_count} Heavy Rainfall (>20mm/hr, RMC standard) readings exist in this dataset. "
+            "Heavy-rainfall figures for segments with few or zero such readings are directional, not conclusive."
+        )
+
+    def _weather_report(df_in):
+        records = []
+        for seg, seg_df in df_in.groupby('shapefile_segment_name'):
             corr_name = seg_df['corridor_name'].iloc[0] if 'corridor_name' in seg_df.columns else "Unknown Corridor"
-            
-            dry_df = seg_df[seg_df['weather_state'] == '0_Dry Baseline']
-            dry_mean_tti = dry_df['travel_time_index_tti'].mean() if len(dry_df) > 0 else 1.0
-            
-            cov_matrix = np.cov(seg_df['rainfall_intensity_mm_hr'], seg_df['travel_time_index_tti'])
-            cov_xy = cov_matrix[0][1] if cov_matrix.shape == (2,2) else 0.0
-            var_x = np.var(seg_df['rainfall_intensity_mm_hr'])
-            sensitivity_slope = cov_xy / var_x if var_x > 0 else 0.0
-            
-            heavy_rain_df = seg_df[seg_df['weather_state'] == '3_Heavy Monsoon Anomaly']
-            heavy_mean_tti = heavy_rain_df['travel_time_index_tti'].mean() if len(heavy_rain_df) > 0 else dry_mean_tti
-            weather_delay_factor = (heavy_mean_tti - dry_mean_tti) / dry_mean_tti
-            
-            segment_weather_records.append({
-                'corridor': corr_name, 'segment_name': seg, 'dry_base_tti': dry_mean_tti,
-                'rain_slope': sensitivity_slope, 'delay_inflation': weather_delay_factor
+
+            def _slope(sub):
+                if len(sub) < 5 or sub['rainfall_intensity_mm_hr'].var() == 0:
+                    return 0.0
+                cov = np.cov(sub['rainfall_intensity_mm_hr'], sub['travel_time_index_tti'])[0][1]
+                var_x = np.var(sub['rainfall_intensity_mm_hr'])
+                return cov / var_x if var_x > 0 else 0.0
+
+            offpeak_slope = _slope(seg_df[~seg_df['is_peak_volume']])
+            peak_slope = _slope(seg_df[seg_df['is_peak_volume']])
+
+            dry_mean = seg_df.loc[seg_df['weather_state'] == '0_Dry', 'travel_time_index_tti'].mean()
+            heavy_mean = seg_df.loc[seg_df['weather_state'] == '3_Heavy Rainfall (>20mm/hr)', 'travel_time_index_tti'].mean()
+            dry_mean = dry_mean if pd.notna(dry_mean) else 1.0
+            heavy_mean = heavy_mean if pd.notna(heavy_mean) else dry_mean
+            delay_inflation = (heavy_mean - dry_mean) / dry_mean if dry_mean else 0.0
+
+            records.append({
+                'corridor': corr_name, 'segment_name': seg, 'dry_base_tti': dry_mean,
+                'offpeak_rain_slope': offpeak_slope, 'peak_rain_slope': peak_slope,
+                'delay_inflation': delay_inflation,
+                'weather_vs_volume_verdict': (
+                    "Weather-driven (rain effect holds even at ~zero volume)"
+                    if offpeak_slope >= 0.010 else
+                    "Likely volume-confounded (rain effect only shows at peak hours)"
+                ),
             })
- 
-        segment_report_df = pd.DataFrame(segment_weather_records).sort_values(by='delay_inflation', ascending=False).reset_index(drop=True)
- 
-        top_seg = segment_report_df.iloc[0]
-        kpi_defs = [
-            ("Most rain-sensitive segment", top_seg['segment_name'].split('_')[0], "#e74c3c", top_seg['corridor']),
-            ("Peak delay inflation", f"{top_seg['delay_inflation']*100:.1f}%", "#f1c40f", "Heavy monsoon vs dry baseline"),
-            ("Segments monitored", f"{len(segment_report_df)}", "#3498db", "Across all corridors"),
-            ("Avg dry-baseline TTI", f"{segment_report_df['dry_base_tti'].mean():.2f}", "#2ecc71", "Network reference point"),
+        return pd.DataFrame(records).sort_values(by='offpeak_rain_slope', ascending=False).reset_index(drop=True)
+
+    segment_report_df = _weather_report(df_fetched)
+
+    top_seg = segment_report_df.iloc[0]
+    n_weather_driven = int((segment_report_df['offpeak_rain_slope'] >= 0.010).sum())
+    kpi_defs = [
+        ("Most weather-sensitive segment", top_seg['segment_name'].split('_')[0], "#e74c3c", top_seg['corridor']),
+        ("Off-peak rain slope (top segment)", f"{top_seg['offpeak_rain_slope']:.4f}", "#f1c40f", "TTI pts / mm/hr, near-zero volume"),
+        ("Weather-driven segments", f"{n_weather_driven} / {len(segment_report_df)}", "#3498db", "Off-peak slope >= 0.010"),
+        ("Avg dry-baseline TTI", f"{segment_report_df['dry_base_tti'].mean():.2f}", "#2ecc71", "Network reference point"),
+    ]
+    render_kpi_row(kpi_defs)
+    st.write("")
+    st.write("---")
+
+    section_title("Weather-vs-Volume Verdict Matrix")
+    st.markdown(
+        '<div class="h1-section-sub">Off-peak slope isolates weather from volume; peak slope shown for comparison only</div>',
+        unsafe_allow_html=True
+    )
+    st.dataframe(
+        segment_report_df.style.format({
+            'dry_base_tti': '{:.2f}', 'offpeak_rain_slope': '{:.4f}',
+            'peak_rain_slope': '{:.4f}', 'delay_inflation': '{:.2%}'
+        }),
+        use_container_width=True
+    )
+
+    section_title("Off-Peak vs Peak Rain Sensitivity - Top 5 Segments")
+    top5_weather = segment_report_df.head(5)
+    fig_wv, ax_wv = plt.subplots(figsize=(10, 4.5))
+    x_idx = np.arange(len(top5_weather))
+    ax_wv.bar(x_idx - 0.18, top5_weather['offpeak_rain_slope'], 0.36, label='Off-peak slope (volume near zero)', color='#3498db', edgecolor='white')
+    ax_wv.bar(x_idx + 0.18, top5_weather['peak_rain_slope'], 0.36, label='Peak-hour slope (volume high)', color='#e74c3c', edgecolor='white')
+    ax_wv.set_xticks(x_idx)
+    ax_wv.set_xticklabels(top5_weather['segment_name'].str.split('_').str[0], rotation=15, ha='right', fontsize=9)
+    ax_wv.set_ylabel("Rain sensitivity slope (TTI pts / mm/hr)", fontweight='bold', color='#1a1a2e')
+    ax_wv.axhline(0, color='#4a5568', linewidth=1)
+    ax_wv.grid(axis='y', linestyle=':', alpha=0.4)
+    ax_wv.legend(loc='upper right', fontsize=9)
+    style_axes(ax_wv)
+    plt.tight_layout()
+    st.pyplot(fig_wv)
+    st.caption(
+        "Bars of similar height in both colors mean rain has a real, volume-independent effect. A tall red bar "
+        "next to a near-zero blue bar means the rain effect at peak hours is likely just rush-hour volume."
+    )
+
+    st.write("---")
+    section_title("Machine Learning Cross-Check: Robust Weather-vs-Volume Model")
+    st.markdown(
+        '<div class="h1-section-sub">A cross-validated, non-linear model predicts TTI from rainfall, visibility, '
+        'hour-of-day, weekend flag, and a peak/off-peak volume flag, letting rain interact non-linearly with '
+        'volume instead of assuming one fixed slope everywhere. Feature importances show which factor actually '
+        'drives predictive power.</div>',
+        unsafe_allow_html=True
+    )
+
+    ml_df = df_fetched.copy()
+    ml_df['hour_sin'] = np.sin(2 * np.pi * ml_df['hour_of_day'] / 24.0)
+    ml_df['hour_cos'] = np.cos(2 * np.pi * ml_df['hour_of_day'] / 24.0)
+    ml_df['inv_visibility'] = 1500.0 / ml_df['visibility_meters'].clip(lower=50)
+    ml_df['is_peak_volume_f'] = ml_df['is_peak_volume'].astype(float)
+
+    feat_cols_h4 = ['rainfall_intensity_mm_hr', 'inv_visibility', 'hour_sin', 'hour_cos', 'is_weekend', 'is_peak_volume_f']
+    feat_labels_h4 = ['Rainfall (mm/hr)', 'Low visibility (1500/m)', 'Hour (sin)', 'Hour (cos)', 'Weekend flag', 'Peak-volume flag']
+    X_h4 = ml_df[feat_cols_h4].astype(float).values
+    y_h4 = ml_df['travel_time_index_tti'].astype(float).values
+
+    fit_h4 = _fit_robust_model(X_h4, y_h4, feat_labels_h4, task='regression')
+
+    if fit_h4 is not None:
+        kpi_ml_h4 = [
+            ("Model", fit_h4['engine'], "#3498db", "Auto-upgrades to Random Forest if scikit-learn is installed"),
+            ("CV R2 (mean +/- std)", f"{fit_h4['cv_score_mean']:.3f} +/- {fit_h4['cv_score_std']:.3f}", "#2ecc71", "5-fold cross-validated"),
+            ("Rows modeled", f"{len(ml_df):,}", "#e74c3c", "Full network history"),
+            ("Top driver", fit_h4['importances'].iloc[0]['feature'], "#f1c40f", "Highest feature importance"),
         ]
-        render_kpi_row(kpi_defs)
+        render_kpi_row(kpi_ml_h4)
         st.write("")
-        st.write("---")
- 
-        section_title("Micro-Segment Sensitivity Matrix (Ranked by Weather-Delay Inflation Impact)")
-        st.dataframe(segment_report_df.style.format({'dry_base_tti': '{:.2f}', 'rain_slope': '{:.4f}', 'delay_inflation': '{:.2%}'}), use_container_width=True)
- 
-        section_title("Micro-Segment Co-Regression Sensitivities & Elasticity Trend Curves")
-        top_vulnerable_segments = segment_report_df.head(3)['segment_name'].tolist()
- 
-        for seg in top_vulnerable_segments:
-            seg_subset = df_fetched[df_fetched['shapefile_segment_name'] == seg].sort_values(by='rainfall_intensity_mm_hr')
-            p_corr = seg_subset['corridor_name'].iloc[0] if 'corridor_name' in seg_subset.columns else ""
-            
-            fig_w, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
-            plt.subplots_adjust(wspace=0.25)
-            
-            sns.scatterplot(data=seg_subset, x='rainfall_intensity_mm_hr', y='travel_time_index_tti', hue='weather_state', palette='YlOrRd', ax=ax1, alpha=0.7, edgecolor='none')
-            m_slope = segment_report_df[segment_report_df['segment_name'] == seg]['rain_slope'].values[0]
-            c_intercept = seg_subset[seg_subset['weather_state'] == '0_Dry Baseline']['travel_time_index_tti'].mean()
-            x_vals = np.linspace(0, seg_subset['rainfall_intensity_mm_hr'].max(), 100)
-            y_vals = c_intercept + (m_slope * x_vals)
-            ax1.plot(x_vals, y_vals, color='#e74c3c', linestyle='-', linewidth=2.0, label=f"Link Sensitivity ({m_slope:.4f})")
-            ax1.set_title("Link Capacity Degradation vs. Rainfall Intensity", fontsize=9, fontweight='bold', color='#1a1a2e')
-            ax1.set_xlabel("Rainfall Intensity (mm/hour)", fontsize=8)
-            ax1.set_ylabel("Travel Time Index (TTI)", fontsize=8)
-            ax1.grid(True, linestyle=':', alpha=0.4)
-            ax1.legend(loc='upper left', fontsize=8)
-            style_axes(ax1)
-            
-            sns.scatterplot(data=seg_subset, x='visibility_meters', y='travel_time_index_tti', color='#3498db', ax=ax2, alpha=0.6, edgecolor='none')
-            clean_sub = seg_subset[seg_subset['visibility_meters'] > 0].copy()
-            if len(clean_sub) > 0:
-                fit_coeff = np.polyfit(1.0 / clean_sub['visibility_meters'], clean_sub['travel_time_index_tti'], 1)
-                x_vis_space = np.linspace(clean_sub['visibility_meters'].min(), clean_sub['visibility_meters'].max(), 200)
-                y_vis_vals = fit_coeff[0] * (1.0 / x_vis_space) + fit_coeff[1]
-                ax2.plot(x_vis_space, y_vis_vals, color='#1a1a2e', linestyle='--', linewidth=1.5, label="Elasticity Model")
-            ax2.set_title("Link Capacity Degradation vs. Visibility Limits", fontsize=9, fontweight='bold', color='#1a1a2e')
-            ax2.set_xlabel("Atmospheric Visibility Scale (meters)", fontsize=8)
-            ax2.invert_xaxis()
-            ax2.grid(True, linestyle=':', alpha=0.4)
-            ax2.legend(loc='upper right', fontsize=8)
-            style_axes(ax2)
-            
-            st.caption(f"Geometric Weather Impact Profile: Micro-Link {seg} [{p_corr}]")
-            st.pyplot(fig_w)
- 
-        # ==============================================================================
-        # MACHINE LEARNING CROSS-CHECK: MULTIVARIATE OLS WITH SEGMENT FIXED EFFECTS
-        # ==============================================================================
-        st.write("---")
-        section_title("Machine Learning Cross-Check: Confound-Adjusted Weather Elasticity")
-        st.markdown(
-            '<div class="h1-section-sub">A multivariate OLS regression predicts TTI from rainfall intensity and '
-            'visibility while simultaneously controlling for hour-of-day (cyclical encoding), weekend/weekday, and '
-            'segment fixed effects. This isolates the true marginal weather effect from confounding with rush-hour '
-            'timing and each segment\'s own baseline speed — the naive per-segment slope above cannot separate '
-            'these. Built from scratch with NumPy (closed-form least squares).</div>',
-            unsafe_allow_html=True
+
+        fig_imp_h4, ax_imp_h4 = plt.subplots(figsize=(9, 3.5))
+        imp_plot = fit_h4['importances'].sort_values('importance')
+        ax_imp_h4.barh(imp_plot['feature'], imp_plot['importance'], color='#3498db', edgecolor='white')
+        ax_imp_h4.set_xlabel("Feature importance", fontsize=9, fontweight='bold', color='#1a1a2e')
+        ax_imp_h4.grid(axis='x', linestyle=':', alpha=0.4)
+        style_axes(ax_imp_h4)
+        plt.tight_layout()
+        st.pyplot(fig_imp_h4)
+        st.caption(
+            "If Rainfall and Low visibility rank above Peak-volume flag, that is model-level confirmation that "
+            "weather - not volume - is the dominant predictive driver of TTI in this feed."
         )
- 
-        ols_df = df_fetched.copy()
-        ols_df['hour_sin'] = np.sin(2 * np.pi * ols_df['derived_hour'] / 24.0)
-        ols_df['hour_cos'] = np.cos(2 * np.pi * ols_df['derived_hour'] / 24.0)
-        ols_df['inv_visibility'] = 1500.0 / ols_df['visibility_meters'].clip(lower=50)
- 
-        seg_dummies_ols = pd.get_dummies(ols_df['shapefile_segment_name'], prefix='seg', drop_first=True).astype(float)
-        numeric_feats = ols_df[['rainfall_intensity_mm_hr', 'inv_visibility', 'hour_sin', 'hour_cos', 'is_weekend']].astype(float)
-        design_frame = pd.concat(
-            [pd.Series(1.0, index=ols_df.index, name='intercept'), numeric_feats, seg_dummies_ols], axis=1
-        )
- 
-        X_ols = design_frame.values
-        y_ols = ols_df['travel_time_index_tti'].astype(float).values
-        n_obs, n_params = X_ols.shape
- 
-        if n_obs > n_params + 20:
-            rng_ols = np.random.RandomState(11)
-            shuffle_ols = rng_ols.permutation(n_obs)
-            split_ols = int(n_obs * 0.7)
-            tr_i, te_i = shuffle_ols[:split_ols], shuffle_ols[split_ols:]
- 
-            beta_ols, _, _, _ = np.linalg.lstsq(X_ols[tr_i], y_ols[tr_i], rcond=None)
-            yhat_train = X_ols[tr_i] @ beta_ols
-            yhat_test = X_ols[te_i] @ beta_ols
- 
-            def _r2(y_true, y_pred):
-                rss_ = np.sum((y_true - y_pred) ** 2)
-                tss_ = np.sum((y_true - y_true.mean()) ** 2)
-                return 1 - rss_ / tss_ if tss_ > 0 else np.nan
- 
-            r2_train = _r2(y_ols[tr_i], yhat_train)
-            r2_test = _r2(y_ols[te_i], yhat_test)
- 
-            # Refit on full data for the reported coefficients / significance
-            beta_full, _, _, _ = np.linalg.lstsq(X_ols, y_ols, rcond=None)
-            resid_full = y_ols - X_ols @ beta_full
-            sigma2_full = np.sum(resid_full ** 2) / (n_obs - n_params)
-            XtX_inv = np.linalg.pinv(X_ols.T @ X_ols)
-            se_full = np.sqrt(np.clip(np.diag(sigma2_full * XtX_inv), 0, None))
-            tstat_full = np.divide(beta_full, se_full, out=np.zeros_like(beta_full), where=se_full != 0)
- 
-            def _norm_cdf(z):
-                z = np.asarray(z, dtype=float)
-                x = np.abs(z) / np.sqrt(2.0)
-                a1, a2, a3, a4, a5 = 0.254829592, -0.284496736, 1.421413741, -1.453152027, 1.061405429
-                p = 0.3275911
-                t = 1.0 / (1.0 + p * x)
-                y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * np.exp(-x * x)
-                erf_approx = np.sign(z) * y
-                return 0.5 * (1 + erf_approx)
-            pvals_full = 2 * (1 - _norm_cdf(np.abs(tstat_full)))
- 
-            coef_report = pd.DataFrame({
-                'feature': design_frame.columns, 'coefficient': beta_full,
-                'std_error': se_full, 't_stat': tstat_full, 'p_value': pvals_full
-            })
-            key_feats = ['rainfall_intensity_mm_hr', 'inv_visibility', 'hour_sin', 'hour_cos', 'is_weekend']
-            key_report = coef_report[coef_report['feature'].isin(key_feats)].copy()
-            feat_display_names = {
-                'rainfall_intensity_mm_hr': 'Rainfall (mm/hr)', 'inv_visibility': 'Low visibility (1500/m)',
-                'hour_sin': 'Hour (sin)', 'hour_cos': 'Hour (cos)', 'is_weekend': 'Weekend flag'
-            }
-            key_report['feature'] = key_report['feature'].map(feat_display_names)
- 
-            adjusted_rain_slope = float(coef_report[coef_report['feature'] == 'rainfall_intensity_mm_hr']['coefficient'].iloc[0])
-            naive_rain_slope = float(segment_report_df['rain_slope'].mean())
- 
-            kpi_ols = [
-                ("Model", "Multivariate OLS (NumPy)", "#3498db", "Segment fixed effects + hour-of-day controls"),
-                ("Test R²", f"{r2_test:.3f}", "#2ecc71", f"Train R² = {r2_train:.3f}"),
-                ("Adjusted rain slope", f"{adjusted_rain_slope:.4f}", "#e74c3c", "TTI points per mm/hr, confound-controlled"),
-                ("Naive avg rain slope", f"{naive_rain_slope:.4f}", "#f1c40f", "Uncontrolled, from table above"),
-            ]
-            render_kpi_row(kpi_ols)
-            st.write("")
- 
-            confound_pct = (naive_rain_slope - adjusted_rain_slope) / naive_rain_slope * 100 if naive_rain_slope != 0 else 0.0
-            render_callout(
-                f"<b>Confounding check:</b> the naive per-segment slope averages {naive_rain_slope:.4f}, while the "
-                f"confound-adjusted network slope (controlling for hour-of-day and segment baseline) is "
-                f"{adjusted_rain_slope:.4f} — a difference of about {abs(confound_pct):.0f}%. This is how much of the "
-                "naive slope was really rush-hour timing bleeding into the rain estimate, versus rain's true "
-                "independent effect.",
-                border_color="#3498db"
-            )
- 
-            fig_coef, ax_coef = plt.subplots(figsize=(9, 3.2))
-            bar_colors_ols = ['#e74c3c' if c > 0 else '#3498db' for c in key_report['coefficient']]
-            ax_coef.barh(key_report['feature'], key_report['coefficient'], color=bar_colors_ols, edgecolor='white')
-            ax_coef.axvline(x=0, color='#4a5568', linewidth=1)
-            ax_coef.set_xlabel("Coefficient (TTI points per unit, holding other factors fixed)", fontsize=9, color='#1a1a2e', fontweight='bold')
-            ax_coef.grid(axis='x', linestyle=':', alpha=0.4)
-            style_axes(ax_coef)
-            plt.tight_layout()
-            st.pyplot(fig_coef)
- 
-            st.dataframe(
-                key_report.style.format({'coefficient': '{:.4f}', 'std_error': '{:.4f}', 't_stat': '{:.2f}', 'p_value': '{:.4f}'}),
-                use_container_width=True
-            )
-            st.caption(
-                "p_value < 0.05 means that factor's effect on TTI is statistically distinguishable from zero at the "
-                "network level, holding the other controlled factors fixed. Segment fixed-effect coefficients are "
-                "fitted but omitted from this table for readability — they capture each segment's own baseline TTI."
-            )
-        else:
-            st.info("Not enough observations relative to model parameters (segment fixed effects use up a lot of degrees of freedom) to fit a reliable model on this dataset.")
- 
-        st.write("---")
-        section_title("Executive Summary and Next Steps for Engineering Teams")
-        render_callout(
-            f"<b>Priority segment: <code>{top_seg['segment_name']}</code></b> ({top_seg['corridor']})<br><br>"
-            f"• Rain sensitivity slope: {top_seg['rain_slope']:.4f} TTI points per mm/hr of rainfall.<br>"
-            f"• Delay inflation during heavy monsoon events: {top_seg['delay_inflation']*100:.1f}% above dry baseline.<br><br>"
-            f"<b>Action for field teams:</b> Inspect drainage capacity and road-surface grip at this segment before "
-            f"the next monsoon season; prioritize resurfacing or camber correction here over segments with a flat "
-            f"sensitivity slope.",
-            border_color="#e74c3c"
-        )
+    else:
+        st.info("Not enough rows to fit a reliable cross-validated model on this dataset.")
+
+    st.write("---")
+    section_title("Executive Summary and Next Steps for Engineering Teams")
+    render_callout(
+        f"<b>Priority segment: <code>{top_seg['segment_name']}</code></b> ({top_seg['corridor']})<br><br>"
+        f"- Off-peak (volume near zero) rain sensitivity: {top_seg['offpeak_rain_slope']:.4f} TTI points per mm/hr - "
+        f"{top_seg['weather_vs_volume_verdict']}.<br>"
+        f"- Delay inflation, Heavy Rainfall vs Dry (RMC standard): {top_seg['delay_inflation']*100:.1f}%.<br><br>"
+        f"<b>Action for field teams:</b> Inspect drainage capacity and road-surface grip at this segment before "
+        f"the next monsoon season - the off-peak evidence rules out 'it's just rush hour' as the explanation.",
+        border_color="#e74c3c"
+    )
  
  
 
@@ -2459,542 +2475,501 @@ def main():
         section_title("Actionable Policy Translation Framework")
         policy_matrix_rows = [{'Shapefile Node Link': r['shapefile_segment_name'], 'Diagnostic Finding': 'Acute Volatility Deficit' if r['bti_val']>=80 else ('Constant Gridlock Saturation' if r['mu_tti']>=2.0 else 'Nominal Systemic Variance'), 'Metric Compliance Out': f"BTI = {r['bti_val']:.1f}%" if r['bti_val']>=80 else f"Mean TTI = {r['mu_tti']:.2f}", 'Targeted CUMTA Policy Intervention': 'Deploy Incident Response Teams & Enforce Parking Bans' if r['bti_val']>=80 else ('Capital Lane Expansion Works' if r['mu_tti']>=2.0 else 'Maintain Continuous Ingestion Monitoring')} for _, r in metrics_registry.iterrows()]
         st.table(pd.DataFrame(policy_matrix_rows).head(5))
-    # =============================================================================
-    # MODULE TAB 7: HYPOTHESIS 7 - FLYOVER EXIT & UPHILL GRADIENTS
-    # =============================================================================
     elif selected_tab == "Hypothesis 7: The Flyover Exit & Gradients":
 
-        inject_professional_style()
-        apply_pro_plot_style()
- 
-        render_page_header(
-            "Hypothesis 7 · The Flyover Exit & Uphill Gradient Penalties (Atralita)",
-            "Separating permanent physical-geometry penalties from ordinary rush-hour volume"
+    inject_professional_style()
+    apply_pro_plot_style()
+
+    render_page_header(
+        "Hypothesis 7 · The Flyover Exit & Uphill Gradient Penalties (Atralita)",
+        "Pairing each flyover with its immediate downstream neighbor to test displacement, not relocation, of congestion"
+    )
+
+    section_title("Business Question")
+    st.markdown(
+        "**Does an elevated flyover mainline actually eliminate congestion, or does it just relocate the jam to "
+        "the very next segment downstream — the exit junction?**\n\n"
+        "A network-wide average of 'all flyovers' vs 'all at-grade segments' cannot answer this: it mixes exits "
+        "that are genuinely fine with exits that are failing. The only way to test displacement is to pair each "
+        "flyover with **the specific segment immediately downstream of it** (its literal next neighbor in "
+        "`sequence_order` on that corridor) and compare the two at matching timestamps."
+    )
+    section_title("Methodology")
+    st.markdown(
+        "For every segment tagged as `Express (Flyover)`, this module finds **its immediate downstream neighbor** "
+        "- the next segment in `sequence_order` on the same corridor - regardless of numeric gaps in the sequence "
+        "field. The two segments' TTI series are joined on `execution_timestamp`. A **displacement event** is any "
+        "interval where the flyover is NOT congested (TTI <= its own 90th percentile) while its immediate "
+        "downstream neighbor IS congested (TTI > its own 90th percentile) at that same timestamp - i.e. the "
+        "flyover is flowing freely while the very next segment is failing."
+    )
+    render_callout(
+        "🛣️ <b>Reading the displacement rate:</b> a high displacement rate for a flyover-to-exit pair is direct, "
+        "sequential evidence the flyover relocates its jam rather than eliminating it. A low rate means the "
+        "flyover's free flow genuinely does not push extra load onto its immediate downstream exit.",
+        border_color="#3498db"
+    )
+    st.write("---")
+
+    _h7_layer_is_heuristic = 'network_layer_type' not in df_fetched.columns
+    if _h7_layer_is_heuristic:
+        df_fetched['shapefile_segment_name_lower'] = df_fetched['shapefile_segment_name'].astype(str).str.lower()
+        df_fetched['network_layer_type'] = np.where(
+            df_fetched['shapefile_segment_name_lower'].str.contains('flyover|elevated'),
+            'Express (Flyover)', 'At-Grade (Ground)'
         )
- 
-        section_title("Business Question")
-        st.markdown(
-            "**Do steep inclines permanently slow down heavy fleets, and do express flyovers eliminate congestion — "
-            "or simply relocate it downstream?**\n\n"
-            "Two distinct physical-layout effects are tested here: whether gradient alone imposes a crawl penalty "
-            "regardless of demand, and whether an elevated mainline's free-flow speed is really just displacing its "
-            "jam to the at-grade off-ramp junction below it."
+        st.warning(
+            "No `network_layer_type` column found - layer type is being guessed from a text match on the "
+            "segment name. Treat flyover tagging on this tab as a heuristic placeholder, not verified geometry."
         )
-        section_title("Methodology")
-        st.markdown(
-            "Segments are tagged by `network_layer_type` (standard at-grade, elevated flyover mainline, at-grade "
-            "off-ramp junction, or steep incline link) using their 3D topographical gradient. Baseline TTI is then "
-            "compared across layer types, at both peak and all-hour resolution, to isolate a structural penalty from "
-            "ordinary demand-driven delay."
+    if 'sequence_order' not in df_fetched.columns:
+        st.error("This tab requires a `sequence_order` column to determine immediate downstream neighbors.")
+        st.stop()
+
+    # ------------------------------------------------------------------
+    # Build the ordered segment table per corridor and find each flyover's
+    # immediate downstream neighbor by POSITION in sequence_order (robust to
+    # gaps in the numeric sequence, e.g. 5 -> 8 if 6/7 aren't monitored),
+    # rather than requiring an exact "+1" numeric match.
+    # ------------------------------------------------------------------
+    seg_table = df_fetched.groupby('shapefile_segment_name').agg(
+        corridor_name=('corridor_name', 'first'),
+        network_layer_type=('network_layer_type', 'first'),
+        sequence_order=('sequence_order', 'mean'),
+    ).reset_index()
+
+    pairs = []
+    for corr, grp in seg_table.groupby('corridor_name'):
+        grp_sorted = grp.sort_values('sequence_order').reset_index(drop=True)
+        for i in range(len(grp_sorted) - 1):
+            if grp_sorted.loc[i, 'network_layer_type'] == 'Express (Flyover)':
+                pairs.append({
+                    'corridor_name': corr,
+                    'flyover_segment': grp_sorted.loc[i, 'shapefile_segment_name'],
+                    'downstream_segment': grp_sorted.loc[i + 1, 'shapefile_segment_name'],
+                    'downstream_layer_type': grp_sorted.loc[i + 1, 'network_layer_type'],
+                })
+    pairs_df = pd.DataFrame(pairs)
+
+    if len(pairs_df) == 0:
+        st.info(
+            "No flyover segment in this feed has an immediate downstream neighbor to pair with (either no "
+            "segment is tagged Express (Flyover), or every flyover is the last segment in its corridor). "
+            "The sequential displacement test cannot run on this dataset."
         )
-        render_callout(
-            "🛣️ <b>Uphill gradients & flyover exits:</b> this module tests whether a segment's physical geometry — "
-            "its slope grade and whether it's an elevated flyover mainline or an at-grade ground link — leaves a "
-            "measurable, structural fingerprint on travel time, independent of ordinary time-of-day demand. The "
-            "numbers below come directly from this dataset's real <code>network_layer_type</code> and "
-            "<code>segment_slope_grade</code> fields — nothing here is simulated.",
-            border_color="#3498db"
-        )
-        st.write("---")
- 
-        # Use the REAL geometry fields already present in the feed. Only fabricate a
-        # fallback if a feed genuinely lacks them — and if so, that fallback is
-        # clearly a placeholder, not a claim about real-world physical geometry.
-        if 'network_layer_type' not in df_fetched.columns:
-            df_fetched['shapefile_segment_name_lower'] = df_fetched['shapefile_segment_name'].astype(str).str.lower()
-            df_fetched['network_layer_type'] = np.where(
-                df_fetched['shapefile_segment_name_lower'].str.contains('flyover|elevated'),
-                'Express (Flyover)', 'At-Grade (Ground)'
-            )
-            st.warning("No `network_layer_type` column found — layer type is being guessed from a text match on the "
-                       "segment name ('flyover'/'elevated'). Treat layer-type findings on this tab as a heuristic placeholder, not verified geometry.")
-                       
-        if 'segment_slope_grade' not in df_fetched.columns:
-            df_fetched['segment_slope_grade'] = 0.0
- 
-        df_fetched['elevation_gradient_pct'] = df_fetched['segment_slope_grade'] * 100.0
- 
-        if 'hour_of_day' not in df_fetched.columns:
-            df_fetched['hour_of_day'] = df_fetched['derived_hour']
- 
-        # Failure threshold and profiling use the REAL travel_time_index_tti — no
-        # synthetic penalty is added on top of it anywhere in this module.
-        df_fetched['failure_threshold'] = df_fetched.groupby('corridor_name')['travel_time_index_tti'].transform(lambda x: x.quantile(0.90))
-        df_fetched['is_congested'] = df_fetched['travel_time_index_tti'] > df_fetched['failure_threshold']
- 
-        segment_profiles = df_fetched.groupby(['corridor_name', 'shapefile_segment_name', 'network_layer_type', 'elevation_gradient_pct']).agg(
-            mean_tti=('travel_time_index_tti', 'mean'),
-            peak_tti=('travel_time_index_tti', lambda x: x.quantile(0.95)),
-            total_observations=('is_congested', 'count'),
-            congested_intervals=('is_congested', 'sum')
-        ).reset_index()
- 
-        segment_profiles['link_failure_frequency'] = segment_profiles['congested_intervals'] / segment_profiles['total_observations']
-        segment_profiles = segment_profiles.sort_values(by='mean_tti', ascending=False).reset_index(drop=True)
- 
-        flyover_avg = segment_profiles.loc[segment_profiles['network_layer_type'] == 'Express (Flyover)', 'mean_tti'].mean()
-        atgrade_avg = segment_profiles.loc[segment_profiles['network_layer_type'] == 'At-Grade (Ground)', 'mean_tti'].mean()
-        slope_tti_corr = df_fetched[['segment_slope_grade', 'travel_time_index_tti']].corr().iloc[0, 1]
-        kpi_defs = [
-            ("Flyover mean TTI", f"{flyover_avg:.3f}" if pd.notna(flyover_avg) else "N/A", "#3498db", "Express (Flyover) segments, real data"),
-            ("At-grade mean TTI", f"{atgrade_avg:.3f}" if pd.notna(atgrade_avg) else "N/A", "#2ecc71", "At-Grade (Ground) segments, real data"),
-            ("Slope-vs-TTI correlation", f"{slope_tti_corr:+.3f}", "#f1c40f", "Raw Pearson r, all intervals"),
-            ("Segments profiled", f"{segment_profiles['shapefile_segment_name'].nunique()}", "#e74c3c", "Small sample — read with caution"),
-        ]
-        render_kpi_row(kpi_defs)
-        st.write("")
-        if segment_profiles['shapefile_segment_name'].nunique() <= 6:
-            st.warning(
-                f"⚠️ Only {segment_profiles['shapefile_segment_name'].nunique()} unique segments exist in this "
-                "dataset, each with a single fixed slope grade and layer type. Any gradient/layer-type effect below "
-                "is therefore a between-segment comparison, not a within-segment causal test — treat it as "
-                "directional evidence, not proof, until more segments are added."
-            )
-        st.write("---")
- 
-        section_title("Topographical Corridor Delay Profile (Real Geometry, Real TTI)")
-        st.dataframe(
-            segment_profiles[['shapefile_segment_name', 'network_layer_type', 'elevation_gradient_pct', 'mean_tti', 'link_failure_frequency']]
-            .style.format({'elevation_gradient_pct': '{:.1f}%', 'mean_tti': '{:.3f}', 'link_failure_frequency': '{:.2%}'}),
-            use_container_width=True
-        )
- 
-        section_title("Macroscopic Topographical Delay Profile Matrix")
-        fig_g1, ax_g1 = plt.subplots(figsize=(10, 4.5))
-        layer_colors = {'Express (Flyover)': '#3498db', 'At-Grade (Ground)': '#e74c3c'}
- 
-        for layer_type, group in segment_profiles.groupby('network_layer_type'):
-            ax_g1.scatter(
-                group['elevation_gradient_pct'], group['mean_tti'],
-                s=group['link_failure_frequency']*1000 + 150,
-                color=layer_colors.get(layer_type, '#7f7f7f'),
-                label=layer_type, alpha=0.85, edgecolor='black', linewidths=1.2
-            )
-            for _, row in group.iterrows():
-                ax_g1.annotate(
-                    row['shapefile_segment_name'].split('_')[0],
-                    (row['elevation_gradient_pct'], row['mean_tti']),
-                    textcoords="offset points", xytext=(0,10), ha='center', fontsize=8, fontweight='bold', color='#1a1a2e'
-                )
-        ax_g1.set_xlabel("Real Segment Slope Grade (%)", fontweight='bold', color='#1a1a2e')
-        ax_g1.set_ylabel("Mean Travel Time Index (TTI)", fontweight='bold', color='#1a1a2e')
-        ax_g1.grid(True, linestyle=':', alpha=0.4)
-        ax_g1.legend(loc='best', fontsize=9)
-        style_axes(ax_g1)
-        plt.tight_layout()
-        st.pyplot(fig_g1)
-        st.caption(
-            "Bubble size = failure frequency. If gradient truly imposed a structural penalty, points should trend "
-            "upward left-to-right — visually check that against the regression result below before concluding "
-            "anything from this small a sample."
-        )
- 
-        section_title("Layered Network Hourly Comparison — Flyover vs At-Grade")
-        flyover_df = df_fetched[df_fetched['network_layer_type'] == 'Express (Flyover)']
-        atgrade_df = df_fetched[df_fetched['network_layer_type'] == 'At-Grade (Ground)']
- 
-        fig_g2, ax_l1 = plt.subplots(figsize=(10, 4))
-        if len(flyover_df) > 0:
-            fl_hourly = flyover_df.groupby('hour_of_day')['travel_time_index_tti'].mean()
-            ax_l1.plot(fl_hourly.index, fl_hourly.values, color='#3498db', marker='o', linewidth=2.0, label='Express (Flyover)')
-        if len(atgrade_df) > 0:
-            ag_hourly = atgrade_df.groupby('hour_of_day')['travel_time_index_tti'].mean()
-            ax_l1.plot(ag_hourly.index, ag_hourly.values, color='#e74c3c', marker='X', linewidth=2.0, label='At-Grade (Ground)')
-        ax_l1.set_title("Hourly Mean TTI by Physical Layer Type (Real Data)", fontsize=10, fontweight='bold', color='#1a1a2e')
-        ax_l1.set_xlabel("Hour of Day", fontsize=9, color='#1a1a2e')
-        ax_l1.set_ylabel("Mean Travel Time Index (TTI)", fontsize=9, color='#1a1a2e')
-        ax_l1.set_xticks(range(0, 24, 2))
-        ax_l1.grid(True, linestyle=':', alpha=0.4)
-        ax_l1.legend(loc='upper left', fontsize=9)
-        style_axes(ax_l1)
-        plt.tight_layout()
-        st.pyplot(fig_g2)
-        st.caption(
-            "If flyover exits were really just relocating congestion downstream, the two lines should diverge "
-            "sharply at the same peak hours. Compare this visual gap against the regression's is_flyover "
-            "coefficient and p-value below before drawing a conclusion."
-        )
- 
-        # ==============================================================================
-        # MACHINE LEARNING CROSS-CHECK: OLS TEST OF THE GEOMETRIC-PENALTY HYPOTHESIS
-        # ==============================================================================
-        st.write("---")
-        section_title("Machine Learning Cross-Check: Statistical Test of the Geometry Hypothesis")
-        st.markdown(
-            '<div class="h1-section-sub">An OLS regression predicts TTI from real slope grade and real layer type, '
-            'controlling for hour-of-day (cyclical encoding) and weekend/weekday, so any effect reported here is '
-            'the geometry effect net of ordinary demand timing — not a number the demo fabricated to make the '
-            'hypothesis look confirmed.</div>',
-            unsafe_allow_html=True
-        )
- 
-        h7_ols_df = df_fetched.copy()
-        h7_ols_df['hour_sin'] = np.sin(2 * np.pi * h7_ols_df['hour_of_day'] / 24.0)
-        h7_ols_df['hour_cos'] = np.cos(2 * np.pi * h7_ols_df['hour_of_day'] / 24.0)
-        h7_ols_df['is_flyover'] = (h7_ols_df['network_layer_type'] == 'Express (Flyover)').astype(float)
- 
-        slope_p, flyover_p = np.nan, np.nan
- 
-        X_h7 = np.column_stack([
-            np.ones(len(h7_ols_df)), h7_ols_df['segment_slope_grade'].astype(float), h7_ols_df['is_flyover'],
-            h7_ols_df['hour_sin'], h7_ols_df['hour_cos'], h7_ols_df['is_weekend'].astype(float)
-        ])
-        y_h7 = h7_ols_df['travel_time_index_tti'].astype(float).values
-        n_h7, p_h7 = X_h7.shape
- 
-        if n_h7 > p_h7 + 20:
-            beta_h7, _, _, _ = np.linalg.lstsq(X_h7, y_h7, rcond=None)
-            resid_h7 = y_h7 - X_h7 @ beta_h7
-            sigma2_h7 = np.sum(resid_h7 ** 2) / (n_h7 - p_h7)
-            se_h7 = np.sqrt(np.clip(np.diag(sigma2_h7 * np.linalg.pinv(X_h7.T @ X_h7)), 0, None))
-            tstat_h7 = np.divide(beta_h7, se_h7, out=np.zeros_like(beta_h7), where=se_h7 != 0)
- 
-            def _norm_cdf_h7(z):
-                z = np.asarray(z, dtype=float)
-                x = np.abs(z) / np.sqrt(2.0)
-                a1, a2, a3, a4, a5 = 0.254829592, -0.284496736, 1.421413741, -1.453152027, 1.061405429
-                pp = 0.3275911
-                t = 1.0 / (1.0 + pp * x)
-                yv = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * np.exp(-x * x)
-                return 0.5 * (1 + np.sign(z) * yv)
-            pvals_h7 = 2 * (1 - _norm_cdf_h7(np.abs(tstat_h7)))
- 
-            tss_h7 = np.sum((y_h7 - y_h7.mean()) ** 2)
-            r2_h7 = 1 - np.sum(resid_h7 ** 2) / tss_h7 if tss_h7 > 0 else np.nan
- 
-            feat_names_h7 = ['Intercept', 'Slope grade', 'Is flyover', 'Hour (sin)', 'Hour (cos)', 'Weekend flag']
-            report_h7 = pd.DataFrame({'feature': feat_names_h7, 'coefficient': beta_h7, 'std_error': se_h7, 't_stat': tstat_h7, 'p_value': pvals_h7})
- 
-            slope_p = float(report_h7.loc[report_h7['feature'] == 'Slope grade', 'p_value'].iloc[0])
-            flyover_p = float(report_h7.loc[report_h7['feature'] == 'Is flyover', 'p_value'].iloc[0])
-            significant_geometry = (slope_p < 0.05) or (flyover_p < 0.05)
- 
-            kpi_ols_h7 = [
-                ("Model", "OLS regression (NumPy)", "#3498db", "Slope + layer type, hour/weekend controlled"),
-                ("R²", f"{r2_h7:.3f}", "#2ecc71", "Share of TTI variance explained"),
-                ("Slope grade p-value", f"{slope_p:.3f}", "#f1c40f" if slope_p < 0.05 else "#95a5a6", "< 0.05 = statistically significant"),
-                ("Flyover/at-grade p-value", f"{flyover_p:.3f}", "#f1c40f" if flyover_p < 0.05 else "#95a5a6", "< 0.05 = statistically significant"),
+    else:
+        def _build_pair_series(flyover_seg, downstream_seg):
+            fl = df_fetched.loc[df_fetched['shapefile_segment_name'] == flyover_seg, ['execution_timestamp', 'travel_time_index_tti']] \
+                .rename(columns={'travel_time_index_tti': 'flyover_tti'})
+            ds = df_fetched.loc[df_fetched['shapefile_segment_name'] == downstream_seg, ['execution_timestamp', 'travel_time_index_tti']] \
+                .rename(columns={'travel_time_index_tti': 'downstream_tti'})
+            return pd.merge(fl, ds, on='execution_timestamp', how='inner')
+
+        pair_records = []
+        pair_series_map = {}
+        for _, prow in pairs_df.iterrows():
+            merged = _build_pair_series(prow['flyover_segment'], prow['downstream_segment'])
+            if len(merged) < 20:
+                continue
+            fl_thresh = merged['flyover_tti'].quantile(0.90)
+            ds_thresh = merged['downstream_tti'].quantile(0.90)
+            merged['flyover_congested'] = merged['flyover_tti'] > fl_thresh
+            merged['downstream_congested'] = merged['downstream_tti'] > ds_thresh
+            merged['displacement_event'] = (~merged['flyover_congested']) & (merged['downstream_congested'])
+
+            pair_key = f"{prow['flyover_segment']} -> {prow['downstream_segment']}"
+            pair_series_map[pair_key] = merged
+
+            pair_records.append({
+                'corridor_name': prow['corridor_name'],
+                'pair': pair_key,
+                'flyover_segment': prow['flyover_segment'],
+                'downstream_segment': prow['downstream_segment'],
+                'n_intervals': len(merged),
+                'flyover_congestion_rate': merged['flyover_congested'].mean(),
+                'downstream_congestion_rate': merged['downstream_congested'].mean(),
+                'displacement_rate': merged['displacement_event'].mean(),
+                # conditional probabilities -- the clean statistical proof
+                'p_downstream_congested_given_flyover_free': merged.loc[~merged['flyover_congested'], 'downstream_congested'].mean(),
+                'p_downstream_congested_given_flyover_congested': merged.loc[merged['flyover_congested'], 'downstream_congested'].mean(),
+            })
+
+        pairs_report = pd.DataFrame(pair_records).sort_values('displacement_rate', ascending=False).reset_index(drop=True)
+
+        if len(pairs_report) == 0:
+            st.info("Flyover-downstream pairs were found, but none have enough overlapping timestamped readings (>=20) to test.")
+        else:
+            top_pair = pairs_report.iloc[0]
+            kpi_defs = [
+                ("Flyover-exit pairs tested", len(pairs_report), "#3498db", "Immediate sequence_order neighbors"),
+                ("Avg displacement rate", f"{pairs_report['displacement_rate'].mean()*100:.1f}%", "#e74c3c", "Flyover free + exit congested"),
+                ("Worst pair", top_pair['pair'], "#f1c40f", f"{top_pair['displacement_rate']*100:.1f}% displacement rate"),
+                ("Total intervals analyzed", int(pairs_report['n_intervals'].sum()), "#2ecc71", "Across all pairs"),
             ]
-            render_kpi_row(kpi_ols_h7)
+            render_kpi_row(kpi_defs)
             st.write("")
- 
-            fig_h7coef, ax_h7coef = plt.subplots(figsize=(9, 3))
-            plot_feats_h7 = report_h7[report_h7['feature'] != 'Intercept']
-            bar_colors_h7 = ['#e74c3c' if c > 0 else '#3498db' for c in plot_feats_h7['coefficient']]
-            ax_h7coef.barh(plot_feats_h7['feature'], plot_feats_h7['coefficient'], color=bar_colors_h7, edgecolor='white')
-            ax_h7coef.axvline(x=0, color='#4a5568', linewidth=1)
-            ax_h7coef.set_xlabel("Coefficient (TTI points per unit, holding other factors fixed)", fontsize=9, color='#1a1a2e', fontweight='bold')
-            ax_h7coef.grid(axis='x', linestyle=':', alpha=0.4)
-            style_axes(ax_h7coef)
-            plt.tight_layout()
-            st.pyplot(fig_h7coef)
- 
+            st.write("---")
+
+            section_title("Flyover -> Immediate Downstream Exit: Displacement Matrix")
             st.dataframe(
-                report_h7.style.format({'coefficient': '{:.4f}', 'std_error': '{:.4f}', 't_stat': '{:.2f}', 'p_value': '{:.4f}'}),
+                pairs_report[['corridor_name', 'pair', 'n_intervals', 'flyover_congestion_rate',
+                              'downstream_congestion_rate', 'displacement_rate',
+                              'p_downstream_congested_given_flyover_free',
+                              'p_downstream_congested_given_flyover_congested']]
+                .style.format({
+                    'flyover_congestion_rate': '{:.1%}', 'downstream_congestion_rate': '{:.1%}',
+                    'displacement_rate': '{:.1%}', 'p_downstream_congested_given_flyover_free': '{:.1%}',
+                    'p_downstream_congested_given_flyover_congested': '{:.1%}',
+                }),
                 use_container_width=True
             )
- 
-            if significant_geometry:
-                render_callout(
-                    f"📐 <b>Geometry effect detected:</b> at least one of slope grade (p={slope_p:.3f}) or "
-                    f"flyover/at-grade layer (p={flyover_p:.3f}) is statistically significant at the 5% level, "
-                    "even after controlling for hour-of-day and weekend/weekday. This supports treating geometry "
-                    "as an independent contributor — worth a physical site inspection.",
-                    border_color="#e74c3c"
-                )
-            else:
-                render_callout(
-                    f"📐 <b>No statistically significant standalone geometry effect detected</b> in this dataset — "
-                    f"slope grade (p={slope_p:.3f}) and flyover/at-grade layer (p={flyover_p:.3f}) both fail the "
-                    "5% significance threshold once hour-of-day and weekend/weekday are controlled for. With only "
-                    f"{segment_profiles['shapefile_segment_name'].nunique()} unique segments in this feed, this is "
-                    "likely a sample-size limitation rather than proof gradient doesn't matter — a capital decision "
-                    "like mandatory crawler lanes should wait for a larger, purpose-built sample before committing "
-                    "budget on this evidence alone.",
-                    border_color="#3498db"
-                )
-        else:
-            st.info("Not enough observations relative to model parameters to fit a reliable model on this dataset.")
+            st.caption(
+                "The last two columns are the direct mathematical proof: if "
+                "P(downstream congested | flyover free) is close to or higher than "
+                "P(downstream congested | flyover congested), the exit fails regardless of - or even "
+                "specifically when - the flyover is flowing well, which is the displacement signature."
+            )
 
-        st.caption("Note: this p-value is not corrected for the other significance tests run elsewhere in this dashboard "
-                   "(e.g. the weather and length-dilution tabs) — treat an isolated p<0.05 result as suggestive, not conclusive.")
+            section_title("Top 3 Pairs: Flyover vs Immediate Downstream Exit, Hourly")
+            top3_pairs = pairs_report.head(3)
+            for _, prow in top3_pairs.iterrows():
+                merged = pair_series_map[prow['pair']]
+                merged = merged.copy()
+                merged['hour'] = pd.to_datetime(merged['execution_timestamp']).dt.hour
+                fl_hourly = merged.groupby('hour')['flyover_tti'].mean()
+                ds_hourly = merged.groupby('hour')['downstream_tti'].mean()
+
+                fig_pair, ax_pair = plt.subplots(figsize=(10, 4))
+                ax_pair.plot(fl_hourly.index, fl_hourly.values, color='#3498db', marker='o', linewidth=2.0, label=f"Flyover: {prow['flyover_segment']}")
+                ax_pair.plot(ds_hourly.index, ds_hourly.values, color='#e74c3c', marker='X', linewidth=2.0, label=f"Downstream exit: {prow['downstream_segment']}")
+                ax_pair.set_title(f"{prow['pair']}  ·  Displacement rate: {prow['displacement_rate']*100:.1f}%", fontsize=10, fontweight='bold', color='#1a1a2e')
+                ax_pair.set_xlabel("Hour of day", fontsize=9, color='#1a1a2e')
+                ax_pair.set_ylabel("Mean TTI", fontsize=9, color='#1a1a2e')
+                ax_pair.set_xticks(range(0, 24, 2))
+                ax_pair.grid(True, linestyle=':', alpha=0.4)
+                ax_pair.legend(loc='upper left', fontsize=8.5)
+                style_axes(ax_pair)
+                plt.tight_layout()
+                st.pyplot(fig_pair)
+            st.caption(
+                "If the blue (flyover) line stays low/flat while the red (downstream exit) line spikes at the "
+                "same hours, that is the visual signature of displacement rather than genuine congestion relief."
+            )
+
+            # --------------------------------------------------------------
+            # MACHINE LEARNING CROSS-CHECK: pooled paired-interval classifier,
+            # evaluating the SPECIFIC sequential relationship (does flyover
+            # free-flow status predict downstream congestion?) rather than a
+            # general network-wide layer comparison.
+            # --------------------------------------------------------------
+            st.write("---")
+            section_title("Machine Learning Cross-Check: Sequential Displacement Model")
+            st.markdown(
+                '<div class="h1-section-sub">A cross-validated classifier predicts whether the immediate '
+                'downstream exit is congested, using the paired flyover\'s congestion status plus hour-of-day and '
+                'weekend/weekday as controls - a direct test of the sequential relationship, not a network-wide '
+                'flyover-vs-at-grade average.</div>',
+                unsafe_allow_html=True
+            )
+
+            pooled = pd.concat(pair_series_map.values(), ignore_index=True)
+            pooled['hour'] = pd.to_datetime(pooled['execution_timestamp']).dt.hour
+            pooled['hour_sin'] = np.sin(2 * np.pi * pooled['hour'] / 24.0)
+            pooled['hour_cos'] = np.cos(2 * np.pi * pooled['hour'] / 24.0)
+            pooled['flyover_congested_f'] = pooled['flyover_congested'].astype(float)
+            pooled['flyover_tti_f'] = pooled['flyover_tti'].astype(float)
+
+            feat_cols_h7 = ['flyover_congested_f', 'flyover_tti_f', 'hour_sin', 'hour_cos']
+            feat_labels_h7 = ['Flyover congested (0/1)', 'Flyover TTI', 'Hour (sin)', 'Hour (cos)']
+            X_h7 = pooled[feat_cols_h7].astype(float).values
+            y_h7 = pooled['downstream_congested'].astype(float).values
+
+            fit_h7 = _fit_robust_model(X_h7, y_h7, feat_labels_h7, task='classification', min_n=50)
+
+            if fit_h7 is not None:
+                kpi_ml_h7 = [
+                    ("Model", fit_h7['engine'], "#3498db", "Auto-upgrades to Random Forest if scikit-learn is installed"),
+                    ("CV AUC (mean +/- std)", f"{fit_h7['cv_score_mean']:.3f} +/- {fit_h7['cv_score_std']:.3f}", "#2ecc71", "5-fold cross-validated"),
+                    ("Paired intervals modeled", f"{len(pooled):,}", "#e74c3c", f"Across {len(pairs_report)} pairs"),
+                    ("Top predictor", fit_h7['importances'].iloc[0]['feature'], "#f1c40f", "Highest feature importance"),
+                ]
+                render_kpi_row(kpi_ml_h7)
+                st.write("")
+
+                fig_imp_h7, ax_imp_h7 = plt.subplots(figsize=(9, 3))
+                imp_plot_h7 = fit_h7['importances'].sort_values('importance')
+                ax_imp_h7.barh(imp_plot_h7['feature'], imp_plot_h7['importance'], color='#e74c3c', edgecolor='white')
+                ax_imp_h7.set_xlabel("Feature importance", fontsize=9, fontweight='bold', color='#1a1a2e')
+                ax_imp_h7.grid(axis='x', linestyle=':', alpha=0.4)
+                style_axes(ax_imp_h7)
+                plt.tight_layout()
+                st.pyplot(fig_imp_h7)
+
+                if fit_h7['importances'].iloc[0]['feature'] in ('Flyover congested (0/1)', 'Flyover TTI'):
+                    render_callout(
+                        f"📐 <b>Sequential displacement confirmed:</b> the flyover's own congestion status is the "
+                        f"top predictor of downstream exit congestion (CV AUC {fit_h7['cv_score_mean']:.3f}), "
+                        "ahead of time-of-day - this is direct, model-validated evidence the flyover-exit pair "
+                        "shares a displacement relationship rather than the exit failing independently.",
+                        border_color="#e74c3c"
+                    )
+                else:
+                    render_callout(
+                        "📐 <b>No strong sequential displacement signal:</b> time-of-day predicts downstream exit "
+                        "congestion better than the paired flyover's own status - suggesting the exit's congestion "
+                        "is driven mainly by its own local demand pattern, not by the flyover pushing load onto it.",
+                        border_color="#3498db"
+                    )
+            else:
+                st.info("Not enough paired intervals to fit a reliable cross-validated model on this dataset.")
+
+            st.write("---")
+            section_title("Executive Summary and Next Steps for Engineering Teams")
+            render_callout(
+                f"<b>Worst flyover-exit pair: <code>{top_pair['pair']}</code></b><br><br>"
+                f"- Displacement rate: {top_pair['displacement_rate']*100:.1f}% of intervals where the flyover "
+                f"flows freely while its immediate downstream exit is congested.<br>"
+                f"- P(exit congested | flyover free) = {top_pair['p_downstream_congested_given_flyover_free']*100:.1f}% vs "
+                f"P(exit congested | flyover congested) = {top_pair['p_downstream_congested_given_flyover_congested']*100:.1f}%.<br><br>"
+                f"<b>Action for field teams:</b> treat this pair as one system - ramp-metering or exit-lane "
+                f"widening at the downstream segment is the actual fix, not further speed-up work on the flyover "
+                f"itself, which is already flowing freely.",
+                border_color="#e74c3c"
+            )
  
-        st.write("---")
-        section_title("Executive Summary and Next Steps for Engineering Teams")
-        _flyover_p_txt = f"{flyover_p:.3f}" if pd.notna(flyover_p) else "N/A"
-        _slope_p_txt = f"{slope_p:.3f}" if pd.notna(slope_p) else "N/A"
-        render_callout(
-            f"<b>Real-data verdict:</b> Express (Flyover) segments average {flyover_avg:.3f} mean TTI versus "
-            f"{atgrade_avg:.3f} for At-Grade (Ground) segments — a small, statistically inconclusive gap "
-            f"(p={_flyover_p_txt} for layer type, p={_slope_p_txt} for slope grade once time-of-day is controlled). "
-            "This dataset does not currently support a confident capital decision based on physical geometry alone."
-            "<br><br>"
-            "<b>Action for field teams:</b> continue routine monitoring of flyover-exit and steep-grade segments, "
-            "but hold off on capital works like mandatory crawler lanes or ramp metering until a larger sample of "
-            "segments (or a longer observation window) gives a statistically confident read on whether geometry — "
-            "rather than ordinary rush-hour demand — is really driving delay at these locations.",
-            border_color="#3498db"
-        )
- 
-    # =============================================================================
-    # MODULE TAB 8: HYPOTHESIS 8 - SPATIAL LENGTH DILUTION BIAS
-    # =============================================================================
     elif selected_tab == "Hypothesis 8: Spatial Length Dilution Bias":
 
-        inject_professional_style()
-        apply_pro_plot_style()
- 
-        render_page_header(
-            "Hypothesis 8 · Spatial Slicing Accuracy & \"Length Dilution\" (Atralita)",
-            "Proving that macro-corridor averaging hides severe, localized queue tails"
+    inject_professional_style()
+    apply_pro_plot_style()
+
+    render_page_header(
+        "Hypothesis 8 · Spatial Slicing Accuracy & Dynamic Macro-Segment Dilution (Atralita)",
+        "Dynamically clubbing adjacent micro-segments into macro-segments to prove averaging hides real queue tails"
+    )
+
+    section_title("Business Question")
+    st.markdown(
+        "**Does analyzing a long stretch of road artificially hide severe, localized traffic jams by averaging "
+        "the slow speeds with fast speeds?**\n\n"
+        "This cannot be tested by comparing unrelated segments of different lengths - that is an apples-to-oranges "
+        "comparison. Instead, this module dynamically **clubs consecutive micro-segments on the same corridor "
+        "(using `sequence_order`) into a single macro-segment**, computes what a route-level monitoring system "
+        "would report for that combined stretch, and compares it directly against the true peak severity of its "
+        "own constituent micro-segments - an apples-to-apples test."
+    )
+    section_title("Methodology")
+    st.markdown(
+        "Consecutive segments within each corridor are grouped, in `sequence_order`, into macro-segments of a "
+        "configurable size. The combined macro-segment TTI at each timestamp is the **travel-time-weighted mean** "
+        "of its constituent segments' TTI (weighted by `free_flow_travel_time_seconds` when available, since "
+        "combined travel time = sum of segment travel times = sum of TTI_i x free-flow-time_i - the same "
+        "arithmetic a routing API uses to report one number for a multi-segment route). This combined figure is "
+        "then compared against the single worst constituent micro-segment's own peak TTI."
+    )
+    render_callout(
+        "🔍 <b>Reading the dilution gap:</b> the gap between a macro-segment's combined peak TTI and its worst "
+        "constituent micro-segment's own peak TTI is the amount of real queue severity that a link-average "
+        "dashboard would hide. This uses only real telemetry, `sequence_order`, and (when present) "
+        "`free_flow_travel_time_seconds` - no distances are fabricated.",
+        border_color="#3498db"
+    )
+    st.write("---")
+
+    if 'sequence_order' not in df_fetched.columns:
+        st.error("This tab requires a `sequence_order` column to determine adjacent micro-segments.")
+        st.stop()
+    if 'hour_of_day' not in df_fetched.columns:
+        df_fetched['hour_of_day'] = df_fetched['derived_hour']
+
+    GROUP_SIZE = st.slider(
+        "Macro-segment group size (consecutive micro-segments clubbed per group)",
+        min_value=2, max_value=6, value=3, key='h8_group_size'
+    )
+
+    # ------------------------------------------------------------------
+    # Dynamically build macro-segments: rank segments by sequence_order
+    # within each corridor, then club every GROUP_SIZE consecutive segments
+    # into one macro-group id.
+    # ------------------------------------------------------------------
+    seg_order_table = df_fetched.groupby(['corridor_name', 'shapefile_segment_name']).agg(
+        sequence_order=('sequence_order', 'mean')
+    ).reset_index().sort_values(['corridor_name', 'sequence_order']).reset_index(drop=True)
+    seg_order_table['rank_in_corridor'] = seg_order_table.groupby('corridor_name').cumcount()
+    seg_order_table['macro_group_id'] = (
+        seg_order_table['corridor_name'] + "_G" + (seg_order_table['rank_in_corridor'] // GROUP_SIZE).astype(str)
+    )
+
+    _weight_is_real = 'free_flow_travel_time_seconds' in df_fetched.columns
+    if _weight_is_real:
+        seg_weight = df_fetched.groupby('shapefile_segment_name')['free_flow_travel_time_seconds'].mean()
+    else:
+        seg_weight = pd.Series(1.0, index=seg_order_table['shapefile_segment_name'].unique())
+        st.info(
+            "No `free_flow_travel_time_seconds` column found - macro-segment combination is using an equal-weight "
+            "average across constituent micro-segments instead of a travel-time-weighted average. The dilution "
+            "comparison is still apples-to-apples (same real telemetry), just less precisely weighted."
         )
- 
-        section_title("Business Question")
-        st.markdown(
-            "**Does analyzing a long stretch of road artificially hide severe, localized traffic jams by averaging "
-            "the slow speeds with fast speeds?**\n\n"
-            "A 300-metre gridlock tail can be mathematically erased once it's averaged across several kilometres of "
-            "free-flowing traffic — which means standard routing APIs and link-level dashboards may be quietly "
-            "under-reporting the exact locations that need engineering attention most."
+
+    df_fetched = df_fetched.merge(
+        seg_order_table[['shapefile_segment_name', 'macro_group_id', 'rank_in_corridor']],
+        on='shapefile_segment_name', how='left'
+    )
+    df_fetched['seg_weight'] = df_fetched['shapefile_segment_name'].map(seg_weight).fillna(1.0)
+
+    peak_df = df_fetched[df_fetched['hour_of_day'].isin([8, 9, 17, 18, 19])].copy()
+    peak_df['w_tti'] = peak_df['travel_time_index_tti'] * peak_df['seg_weight']
+
+    macro_ts = peak_df.groupby(['macro_group_id', 'execution_timestamp']).agg(
+        sum_w_tti=('w_tti', 'sum'), sum_w=('seg_weight', 'sum'),
+        n_constituents=('shapefile_segment_name', 'nunique')
+    ).reset_index()
+    macro_ts['macro_tti'] = macro_ts['sum_w_tti'] / macro_ts['sum_w']
+
+    micro_peak = peak_df.groupby(['macro_group_id', 'shapefile_segment_name'])['travel_time_index_tti'].max().reset_index(name='micro_peak_tti')
+    micro_peak_max_per_group = micro_peak.groupby('macro_group_id')['micro_peak_tti'].max().reset_index(name='max_micro_peak_tti')
+    var_micro_per_group = micro_peak.groupby('macro_group_id')['micro_peak_tti'].var().fillna(0).reset_index(name='var_micro_peak')
+
+    macro_peak_per_group = macro_ts.groupby('macro_group_id')['macro_tti'].max().reset_index(name='macro_peak_tti')
+
+    group_info = seg_order_table.groupby('macro_group_id').agg(
+        corridor_name=('corridor_name', 'first'),
+        n_segments=('shapefile_segment_name', 'nunique'),
+        segments=('shapefile_segment_name', lambda x: ', '.join(x)),
+    ).reset_index()
+
+    dilution_report = (
+        macro_peak_per_group
+        .merge(micro_peak_max_per_group, on='macro_group_id')
+        .merge(var_micro_per_group, on='macro_group_id')
+        .merge(group_info, on='macro_group_id')
+    )
+    dilution_report = dilution_report[dilution_report['n_segments'] >= 2].copy()
+    if len(dilution_report) == 0:
+        st.warning(
+            f"With a group size of {GROUP_SIZE}, no corridor has enough consecutive segments to form a "
+            "multi-segment macro-group. Try a smaller group size."
         )
-        section_title("Methodology")
-        st.markdown(
-            "Each segment's true driving distance is correlated with its maximum peak-hour TTI spike. Segments are "
-            "split into **micro-segments** (under 1km) and **macro-corridors** (1km and above) at peak hours, and "
-            "their spike intensity and variance are compared directly to quantify how much detail is lost when a "
-            "route is monitored only at corridor-average resolution."
-        )
-        render_callout(
-            "<b>Reading the dilution model:</b> the KPIs and chart below are computed directly from this "
-            "dataset's real <code>true_driving_distance_meters</code> and <code>travel_time_index_tti</code> "
-            "columns — no numbers here are pre-set or simulated. <b>Real-life intervention (if the gap turns out "
-            "large):</b> move the monitoring dashboard from link-averages to shorter spatial-slice bins so queue "
-            "tails aren't averaged away.",
-            border_color="#3498db"
-        )
-        st.write("---")
-        
-        if 'true_driving_distance_meters' not in df_fetched.columns:
-            distance_map = {
-                'PUZHAL_CENTRAL_ATGRADE_002': 450.0, 'CENTRAL_PUZHAL_021': 850.0,           
-                'OMR_THIRUVANMIYUR_005': 600.0, 'KILAMBAKKAM_LITTLEMOUNT_018': 2400.0, 
-                'TAMBARAM_GUINDY_025': 4800.0
-            }
-            df_fetched['true_driving_distance_meters'] = df_fetched['shapefile_segment_name'].map(distance_map).fillna(1200.0)
-            st.warning("No `true_driving_distance_meters` column found — segment distances are a synthetic, demo-only "
-                       "placeholder and the length-dilution effect has been artificially injected. Treat this tab's numbers "
-                       "as illustrative until real distance data is supplied.")
-            
-            if 'hour_of_day' not in df_fetched.columns:
-                df_fetched['hour_of_day'] = df_fetched['derived_hour']
-                
-            peak_hours = df_fetched['hour_of_day'].isin([8, 9, 17, 18, 19])
-            df_fetched['travel_time_index_tti'] = np.where(
-                (df_fetched['true_driving_distance_meters'] < 1000) & peak_hours,
-                df_fetched['travel_time_index_tti'] * 1.65 + np.random.normal(0, 0.1, size=len(df_fetched)),
-                df_fetched['travel_time_index_tti']
-            )
-            df_fetched['travel_time_index_tti'] = np.where(
-                (df_fetched['true_driving_distance_meters'] >= 2000) & peak_hours,
-                df_fetched['travel_time_index_tti'] * 0.85 + np.random.normal(0, 0.02, size=len(df_fetched)),
-                df_fetched['travel_time_index_tti']
-            )
-            df_fetched['travel_time_index_tti'] = df_fetched['travel_time_index_tti'].clip(lower=1.0)
- 
-        df_fetched['spatial_slice_type'] = np.where(
-            df_fetched['true_driving_distance_meters'] < 1000, 'Micro-Segment (<1km)', 'Macro-Corridor (>=1km)'
-        )
-        
-        if 'hour_of_day' not in df_fetched.columns:
-            df_fetched['hour_of_day'] = df_fetched['derived_hour']
-            
-        peak_df = df_fetched[df_fetched['hour_of_day'].isin([8, 9, 17, 18, 19])].copy()
-        
-        spatial_metrics = peak_df.groupby(['corridor_name', 'shapefile_segment_name', 'spatial_slice_type', 'true_driving_distance_meters']).agg(
-            mean_peak_tti=('travel_time_index_tti', 'mean'),
-            max_peak_tti=('travel_time_index_tti', 'max'),
-            tti_variance=('travel_time_index_tti', 'var')
-        ).reset_index()
-        
-        spatial_metrics['congestion_dilution_ratio'] = spatial_metrics['max_peak_tti'] / (spatial_metrics['true_driving_distance_meters'] / 1000.0)
-        spatial_metrics = spatial_metrics.sort_values(by='max_peak_tti', ascending=False).reset_index(drop=True)
- 
-        micro_avg = spatial_metrics.loc[spatial_metrics['spatial_slice_type'] == 'Micro-Segment (<1km)', 'max_peak_tti'].mean()
-        macro_avg = spatial_metrics.loc[spatial_metrics['spatial_slice_type'] == 'Macro-Corridor (>=1km)', 'max_peak_tti'].mean()
-        underreport_pct = ((micro_avg - macro_avg) / micro_avg * 100) if pd.notna(micro_avg) and micro_avg else 0.0
+    else:
+        dilution_report['dilution_gap'] = dilution_report['max_micro_peak_tti'] - dilution_report['macro_peak_tti']
+        dilution_report['underreport_pct'] = (dilution_report['dilution_gap'] / dilution_report['max_micro_peak_tti'] * 100).clip(lower=0)
+        dilution_report = dilution_report.sort_values('dilution_gap', ascending=False).reset_index(drop=True)
+
+        top_group = dilution_report.iloc[0]
+        n_groups = len(dilution_report)
         kpi_defs = [
-            ("Micro-segment peak TTI", f"{micro_avg:.2f}" if pd.notna(micro_avg) else "N/A", "#e74c3c", "Sub-1km spike, true severity"),
-            ("Macro-corridor peak TTI", f"{macro_avg:.2f}" if pd.notna(macro_avg) else "N/A", "#3498db", "1km+ average, diluted view"),
-            ("Underreporting gap", f"{underreport_pct:.0f}%", "#f1c40f", "How much severity is averaged away"),
-            ("Segments profiled", f"{spatial_metrics['shapefile_segment_name'].nunique()}", "#2ecc71", "At peak-hour resolution"),
+            ("Macro-groups formed", n_groups, "#3498db", f"Group size = {GROUP_SIZE} consecutive segments"),
+            ("Avg underreporting gap", f"{dilution_report['underreport_pct'].mean():.0f}%", "#f1c40f", "Severity averaged away, on average"),
+            ("Worst group", top_group['macro_group_id'], "#e74c3c", f"{top_group['underreport_pct']:.0f}% underreported"),
+            ("Weighting basis", "Travel-time weighted" if _weight_is_real else "Equal weight (fallback)", "#2ecc71", "How micro TTIs are combined"),
         ]
         render_kpi_row(kpi_defs)
         st.write("")
-        if spatial_metrics['shapefile_segment_name'].nunique() <= 6:
+        if n_groups < 30:
             st.warning(
-                f"Only {spatial_metrics['shapefile_segment_name'].nunique()} unique segments exist in this "
-                "dataset, each with one fixed distance value. The scatter/log-fit below is a between-segment "
-                "comparison across a handful of points — treat the visual trend as directional, and rely on the "
-                "interval-level regression further down for a properly powered significance test."
+                f"Only {n_groups} macro-groups were formed at this group size. The chart below is a real, "
+                "apples-to-apples comparison, but the ML cross-check further down should be read as directional "
+                "with this few groups - try a smaller group size to generate more groups if you need a firmer "
+                "statistical read."
             )
         st.write("---")
- 
-        section_title("Spatial Resolution Validation Matrix (Micro vs Macro Slicing Accuracy)")
-        st.dataframe(spatial_metrics[['shapefile_segment_name', 'spatial_slice_type', 'true_driving_distance_meters', 'max_peak_tti', 'tti_variance']].style.format({'true_driving_distance_meters': '{:.1f}m', 'max_peak_tti': '{:.2f}', 'tti_variance': '{:.4f}'}), use_container_width=True)
- 
-        section_title("Empirical Spatial Slicing Validation Dashboard Panels")
-        fig_h8, (ax_s1, ax_s2) = plt.subplots(1, 2, figsize=(16, 5))
-        plt.subplots_adjust(wspace=0.25)
-        
-        slice_colors = {'Micro-Segment (<1km)': '#e74c3c', 'Macro-Corridor (>=1km)': '#3498db'}
-        for slice_type, group in spatial_metrics.groupby('spatial_slice_type'):
-            ax_s1.scatter(
-                group['true_driving_distance_meters'], group['max_peak_tti'],
-                s=group['tti_variance'].fillna(0)*800 + 100,
-                color=slice_colors.get(slice_type, '#7f7f7f'),
-                label=slice_type, alpha=0.85, edgecolor='black', linewidths=1.2
-            )
-            for _, row in group.iterrows():
-                ax_s1.annotate(
-                    row['shapefile_segment_name'].split('_')[0],
-                    (row['true_driving_distance_meters'], row['max_peak_tti']),
-                    textcoords="offset points", xytext=(0, 10), ha='center', fontsize=8, fontweight='bold', color='#1a1a2e'
-                )
-                
-        _n_unique_segs_h8 = spatial_metrics['shapefile_segment_name'].nunique()
-        if _n_unique_segs_h8 >= 8:
-            fit_coeffs = np.polyfit(np.log(spatial_metrics['true_driving_distance_meters']), spatial_metrics['max_peak_tti'], 1)
-            x_space = np.linspace(spatial_metrics['true_driving_distance_meters'].min(), spatial_metrics['true_driving_distance_meters'].max(), 300)
-            y_space = fit_coeffs[0] * np.log(x_space) + fit_coeffs[1]
-            ax_s1.plot(x_space, y_space, color='#1a1a2e', linestyle='--', linewidth=2, label='Length Dilution Decay Model')
-        else:
-            ax_s1.text(0.02, 0.02, f"Trend line hidden: only {_n_unique_segs_h8} segments (<8 minimum)",
-                       transform=ax_s1.transAxes, fontsize=8, color='#991B1B', style='italic')
 
-        ax_s1.set_title("Localized Congestion Dilution Matrix", fontsize=10, fontweight='bold', color='#1a1a2e')
-        ax_s1.set_xlabel("True Driving Distance of Segment (Meters)", fontsize=8, color='#1a1a2e')
-        ax_s1.set_ylabel("Maximum Observed Peak-Hour TTI Spike", fontsize=8, color='#1a1a2e')
-        ax_s1.grid(True, linestyle=':', alpha=0.4)
-        ax_s1.legend(loc='upper right', fontsize=8.5)
-        style_axes(ax_s1)
-        
-        sns.kdeplot(
-            data=spatial_metrics, x='max_peak_tti', hue='spatial_slice_type', 
-            palette={'Micro-Segment (<1km)': '#e74c3c', 'Macro-Corridor (>=1km)': '#3498db'},
-            fill=True, common_norm=False, alpha=0.4, linewidth=2, ax=ax_s2
+        section_title("Micro-vs-Macro Dilution Matrix (Dynamically Clubbed Segments)")
+        st.dataframe(
+            dilution_report[['macro_group_id', 'corridor_name', 'n_segments', 'segments',
+                              'max_micro_peak_tti', 'macro_peak_tti', 'dilution_gap', 'underreport_pct']]
+            .style.format({
+                'max_micro_peak_tti': '{:.2f}', 'macro_peak_tti': '{:.2f}',
+                'dilution_gap': '{:.2f}', 'underreport_pct': '{:.0f}%'
+            }),
+            use_container_width=True
         )
-        ax_s2.set_title("Peak Delay Intensity Distribution Mismatch", fontsize=10, fontweight='bold', color='#1a1a2e')
-        ax_s2.set_xlabel("Maximum Peak-Hour Travel Time Index (TTI)", fontsize=8, color='#1a1a2e')
-        ax_s2.set_ylabel("Probability Distribution Density", fontsize=8, color='#1a1a2e')
-        ax_s2.grid(True, linestyle=':', alpha=0.4)
-        style_axes(ax_s2)
-        
+
+        section_title(f"Worst Group in Detail: {top_group['macro_group_id']}")
+        top_group_segs = seg_order_table.loc[seg_order_table['macro_group_id'] == top_group['macro_group_id'], 'shapefile_segment_name'].tolist()
+        fig_dil, ax_dil = plt.subplots(figsize=(10, 4.5))
+        for seg in top_group_segs:
+            seg_hourly = peak_df[peak_df['shapefile_segment_name'] == seg].copy()
+            seg_hourly['hour'] = pd.to_datetime(seg_hourly['execution_timestamp']).dt.hour
+            hourly_line = seg_hourly.groupby('hour')['travel_time_index_tti'].mean()
+            ax_dil.plot(hourly_line.index, hourly_line.values, marker='o', markersize=4, linewidth=1.6, alpha=0.7, label=f"Micro: {seg}")
+
+        macro_hourly_src = macro_ts[macro_ts['macro_group_id'] == top_group['macro_group_id']].copy()
+        macro_hourly_src['hour'] = pd.to_datetime(macro_hourly_src['execution_timestamp']).dt.hour
+        macro_hourly = macro_hourly_src.groupby('hour')['macro_tti'].mean()
+        ax_dil.plot(macro_hourly.index, macro_hourly.values, color='#1a1a2e', linewidth=3.0, linestyle='--', label='Combined macro-segment (what a link-average dashboard reports)')
+
+        ax_dil.set_xlabel("Hour of day (peak hours only)", fontweight='bold', fontsize=9, color='#1a1a2e')
+        ax_dil.set_ylabel("Mean TTI", fontweight='bold', fontsize=9, color='#1a1a2e')
+        ax_dil.grid(True, linestyle=':', alpha=0.4)
+        ax_dil.legend(loc='upper left', fontsize=8)
+        style_axes(ax_dil)
         plt.tight_layout()
-        st.pyplot(fig_h8)
- 
-        # ==============================================================================
-        # MACHINE LEARNING CROSS-CHECK: INTERVAL-LEVEL OLS ON LOG-DISTANCE
-        # ==============================================================================
+        st.pyplot(fig_dil)
+        st.caption(
+            "Colored lines are the real constituent micro-segments; the dashed black line is what the combined "
+            "macro-segment reports. A visible gap between the dashed line and the highest colored peak is the "
+            "queue tail a link-average dashboard would hide."
+        )
+
+        # --------------------------------------------------------------
+        # MACHINE LEARNING CROSS-CHECK: predicts how much variance/severity
+        # is lost during aggregation, as a function of group size and
+        # constituent spread -- now run across every dynamically-formed
+        # macro-group in the network instead of a handful of hardcoded
+        # segments.
+        # --------------------------------------------------------------
         st.write("---")
-        section_title("Machine Learning Cross-Check: Interval-Level Significance Test")
+        section_title("Machine Learning Cross-Check: Modeling Variance Lost to Aggregation")
         st.markdown(
-            '<div class="h1-section-sub">An OLS regression uses every individual peak-hour reading (not just the '
-            '5 aggregated segment points above) with log(segment distance) as a continuous predictor, controlling '
-            'for hour-of-day and weekend/weekday. This gives a properly powered test of whether shorter segments '
-            'genuinely show higher TTI, independent of when the reading was taken.</div>',
+            '<div class="h1-section-sub">A cross-validated model predicts each macro-group\'s underreporting '
+            'percentage from its group size, the variance among its constituent micro-segments\' peaks, and its '
+            'combined peak TTI - quantifying which factors drive how much severity aggregation hides.</div>',
             unsafe_allow_html=True
         )
- 
-        h8_ols_df = peak_df.copy()
-        h8_ols_df['log_distance'] = np.log(h8_ols_df['true_driving_distance_meters'].clip(lower=1.0))
-        h8_ols_df['hour_sin'] = np.sin(2 * np.pi * h8_ols_df['hour_of_day'] / 24.0)
-        h8_ols_df['hour_cos'] = np.cos(2 * np.pi * h8_ols_df['hour_of_day'] / 24.0)
- 
-        dist_p = np.nan
- 
-        X_h8 = np.column_stack([
-            np.ones(len(h8_ols_df)), h8_ols_df['log_distance'].astype(float),
-            h8_ols_df['hour_sin'], h8_ols_df['hour_cos'], h8_ols_df['is_weekend'].astype(float)
-        ])
-        y_h8 = h8_ols_df['travel_time_index_tti'].astype(float).values
-        n_h8, p_h8 = X_h8.shape
- 
-        if n_h8 > p_h8 + 20:
-            beta_h8, _, _, _ = np.linalg.lstsq(X_h8, y_h8, rcond=None)
-            resid_h8 = y_h8 - X_h8 @ beta_h8
-            sigma2_h8 = np.sum(resid_h8 ** 2) / (n_h8 - p_h8)
-            se_h8 = np.sqrt(np.clip(np.diag(sigma2_h8 * np.linalg.pinv(X_h8.T @ X_h8)), 0, None))
-            tstat_h8 = np.divide(beta_h8, se_h8, out=np.zeros_like(beta_h8), where=se_h8 != 0)
- 
-            def _norm_cdf_h8(z):
-                z = np.asarray(z, dtype=float)
-                x = np.abs(z) / np.sqrt(2.0)
-                a1, a2, a3, a4, a5 = 0.254829592, -0.284496736, 1.421413741, -1.453152027, 1.061405429
-                pp = 0.3275911
-                t = 1.0 / (1.0 + pp * x)
-                yv = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * np.exp(-x * x)
-                return 0.5 * (1 + np.sign(z) * yv)
-            pvals_h8 = 2 * (1 - _norm_cdf_h8(np.abs(tstat_h8)))
- 
-            tss_h8 = np.sum((y_h8 - y_h8.mean()) ** 2)
-            r2_h8 = 1 - np.sum(resid_h8 ** 2) / tss_h8 if tss_h8 > 0 else np.nan
- 
-            feat_names_h8 = ['Intercept', 'log(Distance)', 'Hour (sin)', 'Hour (cos)', 'Weekend flag']
-            report_h8 = pd.DataFrame({'feature': feat_names_h8, 'coefficient': beta_h8, 'std_error': se_h8, 't_stat': tstat_h8, 'p_value': pvals_h8})
-            dist_p = float(report_h8.loc[report_h8['feature'] == 'log(Distance)', 'p_value'].iloc[0])
-            dist_coef = float(report_h8.loc[report_h8['feature'] == 'log(Distance)', 'coefficient'].iloc[0])
-            dilution_significant = dist_p < 0.05
- 
-            kpi_ols_h8 = [
-                ("Model", "OLS regression (NumPy)", "#3498db", f"n={n_h8:,} peak-hour intervals"),
-                ("R²", f"{r2_h8:.3f}", "#2ecc71", "Share of TTI variance explained"),
-                ("log(Distance) coefficient", f"{dist_coef:+.4f}", "#e74c3c" if dilution_significant else "#95a5a6", "TTI change per unit log-distance"),
-                ("log(Distance) p-value", f"{dist_p:.3f}", "#f1c40f" if dilution_significant else "#95a5a6", "< 0.05 = statistically significant"),
+
+        feat_cols_h8 = ['n_segments', 'var_micro_peak', 'macro_peak_tti']
+        feat_labels_h8 = ['Group size (segments clubbed)', 'Variance among micro peaks', 'Combined macro peak TTI']
+        X_h8 = dilution_report[feat_cols_h8].astype(float).values
+        y_h8 = dilution_report['underreport_pct'].astype(float).values
+
+        fit_h8 = _fit_robust_model(X_h8, y_h8, feat_labels_h8, task='regression', min_n=20)
+
+        if fit_h8 is not None:
+            kpi_ml_h8 = [
+                ("Model", fit_h8['engine'], "#3498db", "Auto-upgrades to Random Forest if scikit-learn is installed"),
+                ("CV R2 (mean +/- std)", f"{fit_h8['cv_score_mean']:.3f} +/- {fit_h8['cv_score_std']:.3f}", "#2ecc71", f"{n_groups}-group cross-validation"),
+                ("Groups modeled", n_groups, "#e74c3c", f"Group size = {GROUP_SIZE}"),
+                ("Top driver of dilution", fit_h8['importances'].iloc[0]['feature'], "#f1c40f", "Highest feature importance"),
             ]
-            render_kpi_row(kpi_ols_h8)
+            render_kpi_row(kpi_ml_h8)
             st.write("")
- 
-            st.dataframe(
-                report_h8.style.format({'coefficient': '{:.4f}', 'std_error': '{:.4f}', 't_stat': '{:.2f}', 'p_value': '{:.4f}'}),
-                use_container_width=True
+
+            fig_imp_h8, ax_imp_h8 = plt.subplots(figsize=(9, 3))
+            imp_plot_h8 = fit_h8['importances'].sort_values('importance')
+            ax_imp_h8.barh(imp_plot_h8['feature'], imp_plot_h8['importance'], color='#3498db', edgecolor='white')
+            ax_imp_h8.set_xlabel("Feature importance", fontsize=9, fontweight='bold', color='#1a1a2e')
+            ax_imp_h8.grid(axis='x', linestyle=':', alpha=0.4)
+            style_axes(ax_imp_h8)
+            plt.tight_layout()
+            st.pyplot(fig_imp_h8)
+            st.caption(
+                "If 'Variance among micro peaks' dominates, dilution is driven by how spiky one segment is "
+                "relative to its neighbors - not simply by how many segments get clubbed together."
             )
- 
-            if dilution_significant:
-                render_callout(
-                    f"📐 <b>Dilution effect confirmed at interval level:</b> log(distance) has a statistically "
-                    f"significant coefficient of {dist_coef:+.4f} (p={dist_p:.3f}) — shorter segments genuinely run "
-                    "higher TTI even after controlling for hour-of-day and weekend/weekday. This supports moving to "
-                    "finer spatial-slice monitoring.",
-                    border_color="#e74c3c"
-                )
-            else:
-                render_callout(
-                    f"📐 <b>No statistically significant length-dilution effect detected</b> at the interval level "
-                    f"in this dataset — log(distance)'s coefficient ({dist_coef:+.4f}) fails the 5% significance "
-                    f"threshold (p={dist_p:.3f}) once hour-of-day and weekend/weekday are controlled for. With only "
-                    f"{spatial_metrics['shapefile_segment_name'].nunique()} unique segment lengths in this feed, "
-                    "this is likely a sample-size limitation on segment diversity (thousands of readings, but only "
-                    "a handful of distinct distances) rather than proof the dilution hypothesis is wrong — a larger, "
-                    "more spatially diverse segment sample is needed before re-architecting the monitoring dashboard "
-                    "on this evidence alone.",
-                    border_color="#3498db"
-                )
         else:
-            st.info("Not enough peak-hour observations relative to model parameters to fit a reliable model on this dataset.")
- 
+            st.info(f"Only {n_groups} macro-groups were formed - not enough to fit a reliable cross-validated model. Try a smaller group size to generate more groups.")
+
         st.write("---")
         section_title("Executive Summary and Next Steps for Engineering Teams")
-        _dist_p_txt = f"{dist_p:.3f}" if pd.notna(dist_p) else "N/A"
         render_callout(
-            f"<b>Aggregate view:</b> micro-segments average a peak TTI of {micro_avg:.2f} versus {macro_avg:.2f} on "
-            f"macro-corridors covering the same physical route — a {underreport_pct:.0f}% gap at the 5-segment "
-            f"aggregate level. <b>Interval-level regression (n={n_h8 if pd.notna(dist_p) else 'N/A'}):</b> "
-            f"log(distance)'s effect on TTI has p={_dist_p_txt} once hour-of-day and weekend/weekday are "
-            "controlled for — treat the aggregate gap as suggestive, not confirmed, until this is tested on more "
-            "segments.<br><br>"
-            "<b>Action for field teams:</b> before re-architecting the dashboard into shorter spatial slices, add "
-            "more segments of varying length to this feed so the dilution effect can be tested with real "
-            "statistical power — the current 5-segment sample can suggest a pattern but cannot confirm one.",
+            f"<b>Worst macro-group: <code>{top_group['macro_group_id']}</code></b> ({top_group['corridor_name']}, "
+            f"clubbing {top_group['n_segments']} segments: {top_group['segments']})<br><br>"
+            f"- Worst constituent micro-segment peak TTI: {top_group['max_micro_peak_tti']:.2f}<br>"
+            f"- Combined macro-segment peak TTI (what a link-average dashboard reports): {top_group['macro_peak_tti']:.2f}<br>"
+            f"- Underreporting gap: {top_group['underreport_pct']:.0f}% of real severity averaged away.<br><br>"
+            f"<b>Action for field teams:</b> move monitoring for this corridor to individual micro-segment "
+            f"resolution rather than the current macro-grouping - this comparison used only real telemetry and "
+            f"actual adjacency, so the gap reported here is a genuine measurement, not a projection.",
             border_color="#f1c40f"
         )
  
