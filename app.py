@@ -2749,7 +2749,7 @@ def main():
         apply_pro_plot_style()
 
         render_page_header(
-            "Hypothesis 8 · Spatial Slicing Accuracy & Dynamic Macro-Segment Dilution (Atralita)",
+            "Hypothesis 8 · Spatial Slicing Accuracy & Dynamic Macro-Segment Dilution",
             "Dynamically clubbing adjacent micro-segments into macro-segments to prove averaging hides real queue tails"
         )
 
@@ -2795,15 +2795,41 @@ def main():
         # ------------------------------------------------------------------
         # Dynamically build macro-segments: rank segments by sequence_order
         # within each corridor, then club every GROUP_SIZE consecutive segments
-        # into one macro-group id.
+        # into one macro-group id — with a proper remainder rule instead of
+        # floor-division silently creating (and later dropping) a size-1 leftover.
         # ------------------------------------------------------------------
+        def _assign_macro_groups(n, group_size):
+            group_ids = np.zeros(n, dtype=int)
+            full_groups = n // group_size
+            remainder = n % group_size
+            idx = 0
+            for g in range(full_groups):
+                group_ids[idx:idx + group_size] = g
+                idx += group_size
+            if remainder == 0:
+                pass
+            elif remainder >= 2:
+                # Leftover is big enough to stand as its own macro-group
+                group_ids[idx:idx + remainder] = full_groups
+            else:
+                # remainder == 1: fold the lone leftover segment into the previous
+                # group rather than dropping it as an unusable size-1 group
+                if full_groups >= 1:
+                    group_ids[idx:idx + remainder] = full_groups - 1
+                else:
+                    # No previous group exists (corridor has only 1 segment total)
+                    group_ids[idx:idx + remainder] = 0
+            return group_ids
+
         seg_order_table = df_fetched.groupby(['corridor_name', 'shapefile_segment_name']).agg(
             sequence_order=('sequence_order', 'mean')
         ).reset_index().sort_values(['corridor_name', 'sequence_order']).reset_index(drop=True)
         
         seg_order_table['rank_in_corridor'] = seg_order_table.groupby('corridor_name').cumcount()
+        seg_order_table['local_group_num'] = seg_order_table.groupby('corridor_name')['rank_in_corridor'] \
+            .transform(lambda r: _assign_macro_groups(len(r), GROUP_SIZE))
         seg_order_table['macro_group_id'] = (
-            seg_order_table['corridor_name'] + "_G" + (seg_order_table['rank_in_corridor'] // GROUP_SIZE).astype(str)
+            seg_order_table['corridor_name'] + "_G" + seg_order_table['local_group_num'].astype(str)
         )
 
         _weight_is_real = 'free_flow_travel_time_seconds' in df_fetched.columns
@@ -2851,7 +2877,8 @@ def main():
             .merge(var_micro_per_group, on='macro_group_id')
             .merge(group_info, on='macro_group_id')
         )
-        # Ensure we only evaluate groups that actually clubbed segments together
+        
+        # Apply strict constraint: A macro group must have at least 2 segments to test dilution
         dilution_report = dilution_report[dilution_report['n_segments'] >= 2].copy()
         
         if len(dilution_report) == 0:
@@ -2867,7 +2894,7 @@ def main():
             top_group = dilution_report.iloc[0]
             n_groups = len(dilution_report)
             kpi_defs = [
-                ("Macro-groups formed", n_groups, "#3498db", f"Group size = {GROUP_SIZE} consecutive segments"),
+                ("Macro-groups formed", n_groups, "#3498db", f"Target Group Size = {GROUP_SIZE}"),
                 ("Avg underreporting gap", f"{dilution_report['underreport_pct'].mean():.0f}%", "#f1c40f", "Severity averaged away, on average"),
                 ("Worst group", top_group['macro_group_id'], "#e74c3c", f"{top_group['underreport_pct']:.0f}% underreported"),
                 ("Weighting basis", "Travel-time weighted" if _weight_is_real else "Equal weight (fallback)", "#2ecc71", "How micro TTIs are combined"),
@@ -2877,10 +2904,9 @@ def main():
             
             if n_groups < 30:
                 st.warning(
-                    f"Only {n_groups} macro-groups were formed at this group size. The chart below is a real, "
-                    "apples-to-apples comparison, but the ML cross-check further down should be read as directional "
-                    "with this few groups — try a smaller group size to generate more groups if you need a firmer "
-                    "statistical read."
+                    f"Only {n_groups} macro-groups were formed. The chart below is a real, apples-to-apples "
+                    "comparison, but the ML cross-check further down should be read as directional with this "
+                    "few groups — try a smaller group size to generate more groups if you need a firmer statistical read."
                 )
             st.write("---")
 
@@ -2925,8 +2951,6 @@ def main():
 
             # --------------------------------------------------------------
             # MACHINE LEARNING CROSS-CHECK: Random Forest Regressor
-            # Predicts how much variance/severity is lost during aggregation
-            # across every dynamically-formed macro-group in the network.
             # --------------------------------------------------------------
             st.write("---")
             section_title("Machine Learning Cross-Check: Modeling Variance Lost to Aggregation")
@@ -2962,7 +2986,7 @@ def main():
                     kpi_ml_h8 = [
                         ("Model", "Random Forest Regressor", "#3498db", "Non-linear variance tracking"),
                         ("CV R² (mean ± std)", f"{cv_scores_h8.mean():.3f} ± {cv_scores_h8.std():.3f}", "#2ecc71", f"5-fold cross-validation"),
-                        ("Groups modeled", n_groups, "#e74c3c", f"Group size = {GROUP_SIZE}"),
+                        ("Groups modeled", n_groups, "#e74c3c", f"Target Group Size = {GROUP_SIZE}"),
                         ("Top driver of dilution", top_predictor_h8, "#f1c40f", "Highest feature importance"),
                     ]
                     render_kpi_row(kpi_ml_h8)
