@@ -13,6 +13,12 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
+try:
+    import anthropic
+    _ANTHROPIC_AVAILABLE = True
+except ImportError:
+    _ANTHROPIC_AVAILABLE = False
+
 def master_dashboard_data_gateway(df: pd.DataFrame) -> pd.DataFrame:
     """
     CUMTA Mid-Layer Data Gateway Controller
@@ -284,6 +290,207 @@ def _corridor_location_tokens(identifier):
     raw_tokens = re.split(r'[_\-\s]+', s)
     return [t for t in raw_tokens if t and not t.isdigit() and t not in _CORRIDOR_DESCRIPTOR_WORDS]
  
+# =============================================================================
+# DASHBOARD Q&A HELP DESK — built-in FAQ knowledge base + matching engine
+# =============================================================================
+_DASHBOARD_FAQ = [
+    {
+        "keywords": ["what", "dashboard", "about", "purpose", "does"],
+        "answer": "This is the CUMTA Core Transit Network Diagnostics Cockpit. It analyzes uploaded "
+                  "traffic telemetry data across 10 hypothesis modules covering bottlenecks, peak-hour "
+                  "patterns, road geometry, weather effects, and more, to help diagnose *why* congestion "
+                  "happens on specific road corridors."
+    },
+    {
+        "keywords": ["upload", "file", "csv", "data", "how", "start", "load"],
+        "answer": "Use the file uploader in the left sidebar under 'Data Engine Intake' to upload a "
+                  "traffic telemetry CSV (e.g. synthetic_telemetry_21_days.csv). Once uploaded, use the "
+                  "'Network Modules Menu' radio buttons in the sidebar to switch between analysis tabs."
+    },
+    {
+        "keywords": ["tti", "travel", "time", "index"],
+        "answer": "TTI (Travel Time Index) measures congestion severity: it's the ratio of current travel "
+                  "time to free-flow travel time on a segment. A TTI of 1.0 means free-flowing traffic; "
+                  "higher values (e.g. 2.0) mean it takes twice as long as it should."
+    },
+    {
+        "keywords": ["aqi", "air", "quality", "pollution", "emission"],
+        "answer": "AQI (Air Quality Index) reflects the level of air pollution measured near a road "
+                  "segment. In several tabs it's cross-referenced with congestion (TTI) to see whether "
+                  "traffic slowdowns are correlated with localized pollution spikes."
+    },
+    {
+        "keywords": ["corridor", "segment", "difference", "shapefile"],
+        "answer": "A 'segment' (shapefile_segment_name / segment_uid) is an individual mapped stretch of "
+                  "road. A 'corridor' groups related segments together (e.g. both directions of the same "
+                  "road) into one named route for higher-level analysis."
+    },
+    {
+        "keywords": ["hypothesis", "hypotheses", "tabs", "modules", "sections"],
+        "answer": "The sidebar 'Network Modules Menu' lists 10 hypothesis tabs, each testing a different "
+                  "theory about congestion causes: bottleneck localization, peak-hour timing, road "
+                  "geometry, weather variance, tidal flow asymmetry, commuter uncertainty, flyover exits, "
+                  "spatial length bias, unsupervised clustering, and traffic-volume-via-AQI proxy."
+    },
+    {
+        "keywords": ["hour", "peak", "time", "day", "derived_hour"],
+        "answer": "'derived_hour' / 'hour_of_day' represents the hour (0-23) extracted from each record's "
+                  "timestamp. Peak hours are typically treated as 8-10am and 5-8pm in the analysis."
+    },
+    {
+        "keywords": ["missing", "synthetic", "random", "fake", "generated", "reconstruct"],
+        "answer": "If certain columns (like TTI, AQI, wind speed, or lane counts) aren't present in your "
+                  "uploaded CSV, the data gateway layer synthesizes reasonable placeholder values so every "
+                  "tab still renders — these are clearly logged with an info/success banner on ingestion."
+    },
+    {
+        "keywords": ["map", "location", "lat", "lon", "geo", "spatial"],
+        "answer": "Map panels use folium to plot each segment's latitude/longitude, colored by severity "
+                  "(e.g. congestion or AQI level), so you can see where problem areas are concentrated "
+                  "geographically."
+    },
+    {
+        "keywords": ["shap", "explainability", "feature", "importance"],
+        "answer": "SHAP panels show which input variables (e.g. precipitation, wind, TTI, hour) contribute "
+                  "most to a given outcome, using mean absolute SHAP values as a feature-importance ranking."
+    },
+    {
+        "keywords": ["export", "download", "save", "report"],
+        "answer": "This dashboard currently displays results in-browser only; use your browser's print/"
+                  "screenshot tools, or right-click a chart to save it, if you need to export a figure."
+    },
+]
+
+def _answer_dashboard_question(question: str) -> str:
+    """Very lightweight keyword-overlap FAQ matcher — no external API calls needed."""
+    q_lower = question.lower()
+    q_words = set(re.findall(r"[a-z0-9]+", q_lower))
+    best_entry, best_score = None, 0
+    for entry in _DASHBOARD_FAQ:
+        score = sum(1 for kw in entry["keywords"] if kw in q_words or kw in q_lower)
+        if score > best_score:
+            best_score, best_entry = score, entry
+    if best_entry and best_score > 0:
+        return best_entry["answer"]
+    topics = ", ".join(sorted({kw for e in _DASHBOARD_FAQ for kw in e["keywords"][:2]}))
+    return ("I don't have a canned answer for that yet. Try asking about: " + topics +
+            ". You can also expand the 'Expand Traceback Logistics' panel if you're seeing an error.")
+
+def _build_dashboard_context(df, selected_tab):
+    """Assemble a system prompt describing the dashboard's current state, so
+    Claude answers questions with real context instead of generic guesses."""
+    lines = [
+        "You are an assistant embedded directly inside the 'CUMTA Core Transit Network "
+        "Diagnostics Cockpit', a Streamlit dashboard that analyzes uploaded road traffic "
+        "telemetry (congestion / TTI, air quality / AQI, weather, and road geometry) across "
+        "10 hypothesis modules exploring root causes of congestion on specific corridors.",
+    ]
+    if selected_tab:
+        lines.append(f"The user is currently viewing the '{selected_tab}' tab.")
+    if df is not None:
+        cols_preview = ", ".join(map(str, df.columns[:40]))
+        lines.append(f"The active dataset has {len(df):,} rows. Columns include: {cols_preview}.")
+        numeric_cols = df.select_dtypes(include=[np.number]).columns[:6]
+        for c in numeric_cols:
+            try:
+                lines.append(f"- {c}: mean={df[c].mean():.2f}, min={df[c].min():.2f}, max={df[c].max():.2f}")
+            except Exception:
+                pass
+    else:
+        lines.append("No dataset has been uploaded yet.")
+    lines.append(
+        "Answer the user's question about the dashboard, its metrics, methodology, or the "
+        "currently loaded data clearly and concisely, in plain language suitable for a transit "
+        "engineer. Keep answers to a few sentences unless more detail is clearly needed."
+    )
+    return "\n".join(lines)
+
+
+def _ask_claude_live(question, df, selected_tab, api_key, history):
+    """Call the live Anthropic API so Claude can answer directly, with awareness
+    of the current dashboard state and recent chat turns."""
+    client = anthropic.Anthropic(api_key=api_key)
+    system_prompt = _build_dashboard_context(df, selected_tab)
+
+    messages = []
+    for prev_q, prev_a in history[-4:]:
+        messages.append({"role": "user", "content": prev_q})
+        messages.append({"role": "assistant", "content": prev_a})
+    messages.append({"role": "user", "content": question})
+
+    response = client.messages.create(
+        model="claude-sonnet-5",
+        max_tokens=600,
+        system=system_prompt,
+        messages=messages,
+    )
+    return "".join(block.text for block in response.content if getattr(block, "type", None) == "text")
+
+
+def render_dashboard_qna_bar(df=None, selected_tab=None):
+    """Always-available sidebar assistant. Uses live Claude when an API key is
+    present (context-aware answers about the current tab/data); otherwise falls
+    back to a built-in FAQ matcher so the bar still works with zero setup."""
+    st.sidebar.write("---")
+    with st.sidebar.expander("💬 Ask Claude about this dashboard", expanded=False):
+
+        if "anthropic_api_key" not in st.session_state:
+            st.session_state.anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+
+        if not st.session_state.anthropic_api_key:
+            key_input = st.text_input(
+                "Anthropic API key (optional, enables live answers)",
+                type="password",
+                help="Get one at console.anthropic.com. Stored only for this browser session. "
+                     "Without a key you still get basic canned answers below."
+            )
+            if key_input:
+                st.session_state.anthropic_api_key = key_input
+                st.rerun()
+        else:
+            st.caption("✅ Live Claude answers enabled for this session.")
+
+        if "qna_history" not in st.session_state:
+            st.session_state.qna_history = []
+
+        with st.form(key="qna_form", clear_on_submit=True):
+            user_question = st.text_input(
+                "Your question",
+                placeholder="e.g. Why does Hypothesis 3 matter here?",
+                label_visibility="collapsed"
+            )
+            submitted = st.form_submit_button("Ask")
+
+        if submitted and user_question.strip():
+            q = user_question.strip()
+            if st.session_state.anthropic_api_key and _ANTHROPIC_AVAILABLE:
+                try:
+                    with st.spinner("Claude is thinking..."):
+                        reply = _ask_claude_live(
+                            q, df, selected_tab,
+                            st.session_state.anthropic_api_key,
+                            st.session_state.qna_history
+                        )
+                except Exception as err:
+                    reply = (f"⚠️ Couldn't reach the Claude API ({err}). Here's a basic answer instead:\n\n"
+                             + _answer_dashboard_question(q))
+            else:
+                reply = _answer_dashboard_question(q)
+                if not _ANTHROPIC_AVAILABLE:
+                    reply += "\n\n_Install the `anthropic` package and add an API key above for live answers._"
+                elif not st.session_state.anthropic_api_key:
+                    reply += "\n\n_Add your Anthropic API key above for live, context-aware answers._"
+            st.session_state.qna_history.append((q, reply))
+
+        for q, a in reversed(st.session_state.qna_history[-5:]):
+            st.markdown(f"**Q: {q}**")
+            st.write(a)
+            st.write("")
+
+        if not st.session_state.qna_history:
+            st.caption("Ask anything about this dashboard, its metrics, or the currently loaded data.")
+
+
 def main():
     st.title("CUMTA Core Transit Network Diagnostics Cockpit")
     st.markdown("### Integrated 3D Spatial-Temporal Network Performance & Anomaly Analytics Framework")
@@ -350,7 +557,7 @@ def main():
     st.title("CUMTA Core Transit Network Diagnostics Cockpit")
     st.markdown("### Integrated 3D Spatial-Temporal Network Performance & Anomaly Analytics Framework")
     st.write("---")
-    
+
     # Sidebar data intake section
     st.sidebar.title("Data Engine Intake")
     uploaded_file = st.sidebar.file_uploader(
@@ -362,6 +569,7 @@ def main():
     # Guard clause: Stop processing if a data asset is not supplied to the cloud engine
     if uploaded_file is None:
         st.info("ℹ️ Application Awaiting Dataset Ingestion. Please upload 'synthetic_telemetry_21_days.csv' via the sidebar menu panel to run the analytics.")
+        render_dashboard_qna_bar()
         return
 
     # Ingest the file into memory via standard pandas
@@ -418,6 +626,9 @@ def main():
     
     st.sidebar.write("---")
     st.sidebar.success(f"Dataset active: {uploaded_file.name}\n\nRow Count Ingested: {len(df_fetched):,}")
+
+    # Context-aware Claude Q&A bar — knows the active dataset and selected tab
+    render_dashboard_qna_bar(df=df_fetched, selected_tab=selected_tab)
 
     # =============================================================================
     # MODULE TAB 0: DATASET OVERVIEW & AUDIT MATRIX TABLES
